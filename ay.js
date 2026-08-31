@@ -1,0 +1,381 @@
+const ayVolume = Float64Array.of(
+    0.0000,
+    0.0137,
+    0.0205,
+    0.0291,
+    0.0423,
+    0.0618,
+    0.0847,
+    0.1369,
+    0.1691,
+    0.2647,
+    0.3527,
+    0.4499,
+    0.5704,
+    0.6873,
+    0.8482,
+    1.0000,
+);
+
+const ayRegNoise = 6;
+const ayRegMixer = 7;
+const ayRegAmpA = 8;
+const ayRegEnvFine = 11;
+const ayRegEnvCoarse = 12;
+const ayRegEnvShape = 13;
+const ayRegIoA = 14;
+const ayAmpEnvMode = 0x10;
+const ayMixerPortAOut = 0x40;
+
+/**
+ * @typedef {{
+ *   counter: number,
+ *   step: number,
+ *   attack: boolean,
+ *   holding: boolean,
+ *   level: number,
+ * }} AyEnv
+ */
+
+/**
+ * t is the T-state the chip has been integrated up to, and area* accumulate
+ * level x duration since the last sample was taken.
+ * @typedef {{
+ *   tickT: number,
+ *   t: number,
+ *   nextTickT: number,
+ *   regs: Uint8Array,
+ *   toneCounter: Uint32Array,
+ *   toneLevel: Uint8Array,
+ *   noiseLfsr: number,
+ *   noiseCounter: number,
+ *   noiseLevel: number,
+ *   env: AyEnv,
+ *   clockDividerPhase: boolean,
+ *   out: Float64Array,
+ *   areaA: number,
+ *   areaB: number,
+ *   areaC: number,
+ * }} Ay
+ */
+
+/**
+ * @param {number} tickT T-states between chip ticks
+ * @returns {Ay}
+ */
+export function createAy(tickT) {
+    const ay = {
+        tickT,
+        t: 0,
+        nextTickT: 0,
+        regs: new Uint8Array(16),
+        toneCounter: new Uint32Array(3),
+        toneLevel: new Uint8Array(3),
+        noiseLfsr: 1,
+        noiseCounter: 0,
+        noiseLevel: 0,
+        env: {
+            counter: 0,
+            step: 0,
+            attack: false,
+            holding: false,
+            level: 0,
+        },
+        clockDividerPhase: false,
+        out: new Float64Array(3),
+        areaA: 0,
+        areaB: 0,
+        areaC: 0,
+    };
+    resetAy(ay, 0);
+    return ay;
+}
+
+/**
+ * @param {Ay} ay
+ * @param {number} t
+ */
+export function resetAy(ay, t) {
+    ay.regs.fill(0);
+    ay.regs[ayRegMixer] = 0x3F;
+    ay.toneCounter.fill(0);
+    ay.toneLevel.fill(0);
+    ay.noiseLfsr = 1;
+    ay.noiseCounter = 0;
+    ay.noiseLevel = 0;
+    ay.env.counter = 0;
+    ay.env.step = 0;
+    ay.env.attack = false;
+    ay.env.holding = false;
+    ay.env.level = 0;
+    ay.clockDividerPhase = false;
+    ay.t = t;
+    ay.nextTickT = t + ay.tickT;
+    ay.areaA = 0;
+    ay.areaB = 0;
+    ay.areaC = 0;
+    ayRefreshLevels(ay);
+}
+
+// Move the chip clock without disturbing chip state, for when audio output
+// starts or the sample rate changes and the accumulated areas are stale. The
+// chip clock is free-running, so a seek to the time it already holds keeps its
+// tick phase instead of re-phasing the grid.
+/**
+ * @param {Ay} ay
+ * @param {number} t
+ */
+export function aySeek(ay, t) {
+    if (t !== ay.t) {
+        ay.t = t;
+        ay.nextTickT = t + ay.tickT;
+    }
+    ay.areaA = 0;
+    ay.areaB = 0;
+    ay.areaC = 0;
+}
+
+/**
+ * @param {Ay} ay
+ * @param {number} reg
+ * @param {number} value
+ */
+export function ayWriteReg(ay, reg, value) {
+    const addr = reg & 0x0F;
+    ay.regs[addr] = value & 0xFF;
+    if (addr === ayRegEnvShape) {
+        ayEnvReset(ay);
+    }
+    ayRefreshLevels(ay);
+}
+
+/**
+ * @param {Ay} ay
+ * @param {number} reg
+ * @returns {number}
+ */
+export function ayReadReg(ay, reg) {
+    const addr = reg & 0x0F;
+    if (addr === ayRegIoA) {
+        if ((ay.regs[ayRegMixer] & ayMixerPortAOut) === 0) {
+            return 0xFF;
+        }
+        return ay.regs[addr];
+    }
+    if (addr === 0x0F) {
+        return 0xFF;
+    }
+    return ay.regs[addr];
+}
+
+// Integrate the chip forward to an exact T-state, accumulating level x duration
+// per channel. Register writes flush through here first, so an envelope retrigger
+// lands on the T-state that wrote it rather than on the next sample boundary.
+/**
+ * @param {Ay} ay
+ * @param {number} t
+ */
+export function ayRunTo(ay, t) {
+    while (t > ay.t) {
+        let next = ay.nextTickT;
+        if (next > t) {
+            next = t;
+        }
+        const dur = next - ay.t;
+        ay.areaA += ay.out[0] * dur;
+        ay.areaB += ay.out[1] * dur;
+        ay.areaC += ay.out[2] * dur;
+        ay.t = next;
+        if (ay.t === ay.nextTickT) {
+            ayTick(ay);
+            ayRefreshLevels(ay);
+            ay.nextTickT += ay.tickT;
+        }
+    }
+}
+
+// Advance the chip with nothing listening. The counters, noise shift register
+// and envelope still run, so a tone or envelope that should finish during a
+// discarded turbo burst really does; only the per-interval integration and the
+// cached output levels are skipped, the latter refreshed once at the end.
+/**
+ * @param {Ay} ay
+ * @param {number} t
+ */
+export function ayRunSilent(ay, t) {
+    if (t <= ay.t) {
+        return;
+    }
+    while (ay.nextTickT <= t) {
+        ayTick(ay);
+        ay.nextTickT += ay.tickT;
+    }
+    ay.t = t;
+    ayRefreshLevels(ay);
+}
+
+/**
+ * @param {Ay} ay
+ * @param {number} period
+ * @param {Float32Array} channelA
+ * @param {Float32Array} channelB
+ * @param {Float32Array} channelC
+ * @param {number} at
+ */
+export function ayTakeSample(ay, period, channelA, channelB, channelC, at) {
+    const inv = 1 / period;
+    channelA[at] = ay.areaA * inv;
+    channelB[at] = ay.areaB * inv;
+    channelC[at] = ay.areaC * inv;
+    ay.areaA = 0;
+    ay.areaB = 0;
+    ay.areaC = 0;
+}
+
+// Clock tone every divider step and noise plus envelope on alternating steps.
+/** @param {Ay} ay */
+function ayTick(ay) {
+    const clock16 = !ay.clockDividerPhase;
+    ay.clockDividerPhase = !ay.clockDividerPhase;
+
+    for (let ch = 0; ch < 3; ch += 1) {
+        if (ay.toneCounter[ch] === 0) {
+            ay.toneLevel[ch] ^= 1;
+            const half = ayTonePeriod(ay, ch);
+            ay.toneCounter[ch] = half - 1;
+        } else {
+            ay.toneCounter[ch] -= 1;
+        }
+    }
+
+    if (clock16) {
+        if (ay.noiseCounter === 0) {
+            ay.noiseCounter = ayNoisePeriod(ay) - 1;
+            ayNoiseTick(ay);
+        } else {
+            ay.noiseCounter -= 1;
+        }
+        if (ay.env.counter === 0) {
+            ay.env.counter = ayEnvPeriod(ay) - 1;
+            ayEnvStep(ay);
+        } else {
+            ay.env.counter -= 1;
+        }
+    }
+}
+
+// Cache the three output levels. Everything that can change them - a tick, a
+// register write, an envelope step - calls this, so integrating a span is three
+// multiply-adds with no register decoding in the loop.
+/** @param {Ay} ay */
+function ayRefreshLevels(ay) {
+    const mixer = ay.regs[ayRegMixer];
+    const noiseHigh = ay.noiseLevel !== 0;
+    for (let ch = 0; ch < 3; ch += 1) {
+        const toneOut = ay.toneLevel[ch] !== 0 || (mixer & (1 << ch)) !== 0;
+        const noiseOut = noiseHigh || (mixer & (1 << (ch + 3))) !== 0;
+        if (!toneOut || !noiseOut) {
+            ay.out[ch] = 0;
+            continue;
+        }
+        const ampreg = ay.regs[ayRegAmpA + ch];
+        let amp = ampreg & 0x0F;
+        if ((ampreg & ayAmpEnvMode) !== 0) {
+            amp = ay.env.level;
+        }
+        ay.out[ch] = ayVolume[amp];
+    }
+}
+
+/** @param {Ay} ay */
+function ayEnvReset(ay) {
+    const e = ay.env;
+    e.attack = (ay.regs[ayRegEnvShape] & 0x04) !== 0;
+    e.step = 0;
+    e.holding = false;
+    e.counter = ayEnvPeriod(ay) - 1;
+    ayEnvSetLevel(ay);
+}
+
+/** @param {Ay} ay */
+function ayEnvStep(ay) {
+    const e = ay.env;
+    if (e.holding) {
+        return;
+    }
+    if (e.step < 15) {
+        e.step += 1;
+        ayEnvSetLevel(ay);
+        return;
+    }
+    const shape = ay.regs[ayRegEnvShape] & 0x0F;
+    const cont = (shape & 0x08) !== 0;
+    const alt = (shape & 0x02) !== 0;
+    const hold = (shape & 0x01) !== 0;
+    if (!cont) {
+        e.holding = true;
+        e.level = 0;
+        return;
+    }
+    if (hold) {
+        e.holding = true;
+        if (alt) {
+            e.attack = !e.attack;
+        }
+        if (e.attack) {
+            e.level = 15;
+        } else {
+            e.level = 0;
+        }
+        return;
+    }
+    if (alt) {
+        e.attack = !e.attack;
+    }
+    e.step = 0;
+    ayEnvSetLevel(ay);
+}
+
+/** @param {Ay} ay */
+function ayNoiseTick(ay) {
+    const feedback = (ay.noiseLfsr ^ (ay.noiseLfsr >> 3)) & 1;
+    ay.noiseLfsr = (ay.noiseLfsr >> 1) | (feedback << 16);
+    ay.noiseLevel = ay.noiseLfsr & 1;
+}
+
+/**
+ * @param {Ay} ay
+ * @param {number} ch
+ * @returns {number}
+ */
+function ayTonePeriod(ay, ch) {
+    const fine = ay.regs[ch * 2];
+    const coarse = ay.regs[ch * 2 + 1] & 0x0F;
+    return Math.max((coarse << 8) | fine, 1);
+}
+
+/**
+ * @param {Ay} ay
+ * @returns {number}
+ */
+function ayNoisePeriod(ay) {
+    return Math.max(ay.regs[ayRegNoise] & 0x1F, 1);
+}
+
+/**
+ * @param {Ay} ay
+ * @returns {number}
+ */
+function ayEnvPeriod(ay) {
+    return Math.max(ay.regs[ayRegEnvFine] | (ay.regs[ayRegEnvCoarse] << 8), 1);
+}
+
+/** @param {Ay} ay */
+function ayEnvSetLevel(ay) {
+    const e = ay.env;
+    if (e.attack) {
+        e.level = e.step;
+    } else {
+        e.level = 15 - e.step;
+    }
+}

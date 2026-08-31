@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TSRun</title>
+<style>
+:root {
+    color-scheme: dark;
+    --paper: #111;
+    --ink: #EEE;
+    --muted: #999;
+    --line: #333;
+    --accent: #0BF;
+    --control-radius: 3.5px;
+}
+html, body {
+    height: 100%;
+    margin: 0;
+    font: 13px/1.2 monospace;
+    background: var(--paper);
+    color: var(--ink);
+}
+body {
+    display: flex;
+    flex-direction: column;
+    min-height: 100%;
+}
+header {
+    padding: 10px 14px 5px;
+    border-bottom: 1px solid var(--line);
+}
+.colbox,
+.rowbox {
+    display: flex;
+    gap: 6px;
+}
+.colbox {
+    flex-direction: column;
+    flex: 0;
+    align-items: stretch;
+}
+.colbox-stretch {
+    flex: 1;
+}
+.rowbox {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    min-width: 0;
+}
+a {
+    color: var(--accent);
+}
+button, input {
+    font: inherit;
+}
+button,
+.switch {
+    display: inline-block;
+    padding: 5px 12px;
+    border: 1px solid #666;
+    border-radius: var(--control-radius);
+    font-weight: bold;
+    background: #333;
+    color: var(--ink);
+    cursor: pointer;
+}
+button:hover,
+.switch:hover {
+    background: #444;
+}
+button:active,
+.switch:active {
+    background: #000;
+}
+.switch {
+    position: relative;
+}
+.switch:has(> input[type="checkbox"]:checked) {
+    color: #000;
+    background: var(--accent);
+}
+.switch > input[type="checkbox"] {
+    position: absolute;
+    width: 0;
+    height: 0;
+    margin: 0;
+    opacity: 0;
+    pointer-events: none;
+}
+.media-info {
+    flex: 1;
+    min-width: 0;
+    color: var(--muted);
+}
+.media-info.error {
+    font-weight: 600;
+    color: var(--accent);
+}
+#workspace {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    min-height: 0;
+    background: var(--paper);
+}
+#screen-slot {
+    display: flex;
+    flex: 1;
+    align-items: center;
+    justify-content: center;
+    min-height: 0;
+}
+#screen-slot:fullscreen {
+    width: 100%;
+    height: 100%;
+    background: var(--paper);
+}
+#screen {
+    display: block;
+    image-rendering: pixelated;
+}
+#keyboard {
+    display: flex;
+    flex-direction: column;
+    flex-shrink: 0;
+    gap: 6px;
+    padding: 10px 14px 14px;
+    border-top: 1px solid var(--line);
+}
+.keyboard-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    justify-content: center;
+}
+.keyboard-key {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    gap: 1px;
+    min-width: 2.6em;
+    min-height: 2.8em;
+    padding: 2px 4px;
+    font: inherit;
+    font-size: 12px;
+    line-height: 1.1;
+}
+.keyboard-key.wide {
+    min-width: 12em;
+}
+.keyboard-key .keyword {
+    color: var(--accent);
+    font-size: 9px;
+}
+.keyboard-key.on {
+    background: var(--accent);
+    color: #111;
+    border-color: var(--accent);
+}
+.keyboard-key.on .keyword {
+    color: #111;
+}
+</style>
+</head>
+<body>
+<header id="page-header" class="colbox">
+    <div class="rowbox">
+        <button id="reset">Reset</button>
+        <button id="nmi" title="Non-maskable interrupt">NMI</button>
+        <button id="keyboard-toggle" title="Onscreen keyboard (F1)">Keyboard</button>
+        <div id="top-info" class="media-info">Initializing...</div>
+        <a href="https://github.com/josef-jelinek/TSRun">GitHub repo</a>
+    </div>
+    <div class="rowbox">
+        <div class="colbox colbox-stretch">
+            <div class="rowbox">
+                <button id="load-tape">Load TAP</button>
+                <input id="file-tape" type="file" accept=".tap" style="display: none">
+                <label class="switch"><input id="turbo" type="checkbox" checked> Turbo</label>
+                <div id="tape-info" class="media-info">No tape</div>
+            </div>
+            <div class="rowbox">
+                <button id="load-cart">Load DCK</button>
+                <input id="file-cart" type="file" accept=".dck" style="display: none">
+                <button id="eject-cart">Eject</button>
+                <div id="cart-info" class="media-info">No cartridge</div>
+            </div>
+        </div>
+        <div class="colbox colbox-stretch">
+            <div class="rowbox">
+                <button id="load-rom0" title="Set HOME ROM">Load ROM0</button>
+                <input id="file-rom0" type="file" accept=".rom, .bin" style="display: none">
+                <div id="rom0-info" class="media-info">No HOME ROM file</div>
+            </div>
+            <div class="rowbox">
+                <button id="load-rom1" title="Set EXROM">Load ROM1</button>
+                <input id="file-rom1" type="file" accept=".rom, .bin" style="display: none">
+                <div id="rom1-info" class="media-info">No EXROM file</div>
+            </div>
+        </div>
+    </div>
+</header>
+<main id="workspace">
+    <div id="screen-slot">
+        <canvas id="screen" width="640" height="240"></canvas>
+    </div>
+    <div id="keyboard" style="display: none"></div>
+</main>
+<script type="module" src="main.js"></script>
+</body>
+</html>
