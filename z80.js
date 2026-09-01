@@ -7,6 +7,39 @@ const flagY = 0x20;
 const flagZ = 0x40;
 const flagS = 0x80;
 
+const z80ResetState = {
+    a: 0,
+    f: 0,
+    b: 0,
+    c: 0,
+    d: 0,
+    e: 0,
+    h: 0,
+    l: 0,
+    a2: 0,
+    f2: 0,
+    b2: 0,
+    c2: 0,
+    d2: 0,
+    e2: 0,
+    h2: 0,
+    l2: 0,
+    xh: 0,
+    xl: 0,
+    yh: 0,
+    yl: 0,
+    sp: 0,
+    pc: 0,
+    i: 0,
+    r: 0,
+    iff1: false,
+    iff2: false,
+    im: 0,
+    halted: false,
+    eiDelay: false,
+    nmiPending: false,
+};
+
 // S/Z and undocumented result bits 5/3, cached for hot instruction paths.
 const sz53 = new Uint8Array(256);
 // The same result flags with even parity included.
@@ -85,72 +118,12 @@ for (let i = 0; i < 256; i += 1) {
 
 /** @returns {Z80} */
 export function createZ80() {
-    return {
-        a: 0,
-        f: 0,
-        b: 0,
-        c: 0,
-        d: 0,
-        e: 0,
-        h: 0,
-        l: 0,
-        a2: 0,
-        f2: 0,
-        b2: 0,
-        c2: 0,
-        d2: 0,
-        e2: 0,
-        h2: 0,
-        l2: 0,
-        xh: 0,
-        xl: 0,
-        yh: 0,
-        yl: 0,
-        sp: 0,
-        pc: 0,
-        i: 0,
-        r: 0,
-        iff1: false,
-        iff2: false,
-        im: 0,
-        halted: false,
-        eiDelay: false,
-        nmiPending: false,
-    };
+    return {...z80ResetState};
 }
 
 /** @param {Z80} cpu */
 export function resetZ80(cpu) {
-    cpu.a = 0;
-    cpu.f = 0;
-    cpu.b = 0;
-    cpu.c = 0;
-    cpu.d = 0;
-    cpu.e = 0;
-    cpu.h = 0;
-    cpu.l = 0;
-    cpu.a2 = 0;
-    cpu.f2 = 0;
-    cpu.b2 = 0;
-    cpu.c2 = 0;
-    cpu.d2 = 0;
-    cpu.e2 = 0;
-    cpu.h2 = 0;
-    cpu.l2 = 0;
-    cpu.xh = 0;
-    cpu.xl = 0;
-    cpu.yh = 0;
-    cpu.yl = 0;
-    cpu.sp = 0;
-    cpu.pc = 0;
-    cpu.i = 0;
-    cpu.r = 0;
-    cpu.iff1 = false;
-    cpu.iff2 = false;
-    cpu.im = 0;
-    cpu.halted = false;
-    cpu.eiDelay = false;
-    cpu.nmiPending = false;
+    Object.assign(cpu, z80ResetState);
 }
 
 /**

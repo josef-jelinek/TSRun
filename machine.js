@@ -424,21 +424,12 @@ function memRead(m, addr) {
     const off = addr & 0x1FFF;
     if ((m.portF4 & (1 << chunk)) !== 0) {
         if ((m.portFF & 0x80) !== 0) {
-            if (m.exCart[chunk] !== null) {
-                return m.exCart[chunk][off];
-            }
-            return m.exRom[off];
+            return m.exCart[chunk]?.[off] ?? m.exRom[off];
         }
-        if (m.dock[chunk] !== null) {
-            return m.dock[chunk][off];
-        }
-        return 0xFF;
+        return m.dock[chunk]?.[off] ?? 0xFF;
     }
     if (addr < 0x4000) {
-        if (m.homeCart[chunk] !== null) {
-            return m.homeCart[chunk][off];
-        }
-        return m.homeRom[addr];
+        return m.homeCart[chunk]?.[off] ?? m.homeRom[addr];
     }
     return m.ram[addr];
 }

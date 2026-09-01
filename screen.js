@@ -16,6 +16,8 @@ const viewH = 480;
  * only needs the context itself.
  * @typedef {{
  *   gl: WebGL2RenderingContext,
+ *   crtOn: boolean,
+ *   crtLoc: WebGLUniformLocation,
  * }} Gfx
  */
 
@@ -49,6 +51,26 @@ export function initScreen(canvas, shaders, onGfx) {
     }
 }
 
+/**
+ * @param {Gfx | null} gfx
+ * @param {boolean} on
+ */
+export function setCrt(gfx, on) {
+    if (gfx === null) {
+        return;
+    }
+    gfx.crtOn = on;
+    const gl = gfx.gl;
+    gl.uniform1i(gfx.crtLoc, Number(on));
+    const canvas = /** @type {HTMLCanvasElement} */ (gl.canvas);
+    if (on) {
+        canvas.classList.add("crt");
+    } else {
+        canvas.classList.remove("crt");
+    }
+    resizeScreen(gfx);
+}
+
 /** @param {Gfx | null} gfx */
 export function resizeScreen(gfx) {
     if (gfx === null) {
@@ -57,6 +79,33 @@ export function resizeScreen(gfx) {
     const gl = gfx.gl;
     const canvas = /** @type {HTMLCanvasElement} */ (gl.canvas);
     const workspace = canvas.parentElement;
+    if (gfx.crtOn) {
+        let width = viewW;
+        let height = viewH;
+        if (workspace !== null) {
+            width = workspace.clientWidth;
+            height = Math.floor(width * viewH / viewW);
+            if (height > workspace.clientHeight) {
+                height = workspace.clientHeight;
+                width = Math.floor(height * viewW / viewH);
+            }
+        }
+        width = Math.max(width, 1);
+        height = Math.max(height, 1);
+        canvas.style.width = width + "px";
+        canvas.style.height = height + "px";
+        const pixelRatio = Math.max(window.devicePixelRatio, 1);
+        const bufferWidth = Math.max(Math.round(width * pixelRatio), 1);
+        const bufferHeight = Math.max(Math.round(height * pixelRatio), 1);
+        if (canvas.width !== bufferWidth) {
+            canvas.width = bufferWidth;
+        }
+        if (canvas.height !== bufferHeight) {
+            canvas.height = bufferHeight;
+        }
+        gl.viewport(0, 0, canvas.width, canvas.height);
+        return;
+    }
     let scale = 1;
     if (workspace !== null) {
         const fitX = Math.floor(workspace.clientWidth / viewW);
@@ -67,6 +116,13 @@ export function resizeScreen(gfx) {
     const height = viewH * scale;
     canvas.style.width = width + "px";
     canvas.style.height = height + "px";
+    if (canvas.width !== frameW) {
+        canvas.width = frameW;
+    }
+    if (canvas.height !== frameH) {
+        canvas.height = frameH;
+    }
+    gl.viewport(0, 0, frameW, frameH);
 }
 
 /**
@@ -112,11 +168,16 @@ function createGfx(canvas, vertGLSL, fragGLSL) {
     if (texLoc === null) {
         return null;
     }
+    const crtLoc = gl.getUniformLocation(program, "u_crt");
+    if (crtLoc === null) {
+        return null;
+    }
     gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, 1);
     gl.useProgram(program);
     gl.uniform1i(texLoc, 0);
+    gl.uniform1i(crtLoc, 0);
     gl.viewport(0, 0, frameW, frameH);
-    return {gl};
+    return {gl, crtOn: false, crtLoc};
 }
 
 /**

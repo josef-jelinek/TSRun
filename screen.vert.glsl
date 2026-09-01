@@ -3,7 +3,8 @@
 out vec2 v_uv;
 
 void main() {
-    vec2 p = vec2(ivec2(gl_VertexID & 1, gl_VertexID >> 1) * 2 - 1);
-    v_uv = p * 0.5 + 0.5;
-    gl_Position = vec4(p, 0.0, 1.0);
+    // Generate UV quad coordinates from the ID, so no attribute buffer is needed.
+    v_uv = vec2(ivec2(gl_VertexID & 1, gl_VertexID >> 1));
+    // Vertex coordinates align with scaled symmetrical UV coordinates.
+    gl_Position = vec4(v_uv * 2.0 - 1.0, 0.0, 1.0);
 }

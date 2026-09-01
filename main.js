@@ -1,4 +1,4 @@
-import {initScreen, resizeScreen, drawScreen} from "./screen.js";
+import {initScreen, resizeScreen, setCrt, drawScreen} from "./screen.js";
 
 import {
     createMachine,
@@ -60,6 +60,8 @@ const ui = {
     screen: /** @type {HTMLCanvasElement} */ (document.getElementById("screen")),
     keyboard: /** @type {HTMLElement} */ (document.getElementById("keyboard")),
     keyboardToggle: /** @type {HTMLButtonElement} */ (document.getElementById("keyboard-toggle")),
+    crt: /** @type {HTMLInputElement} */ (document.getElementById("crt")),
+    fullscreenToggle: /** @type {HTMLButtonElement} */ (document.getElementById("fullscreen-toggle")),
     turbo: /** @type {HTMLInputElement} */ (document.getElementById("turbo")),
 };
 
@@ -117,25 +119,22 @@ ui.loadTape.onclick = function () {
 };
 
 ui.fileTape.onchange = function () {
-    const tapeFiles = ui.fileTape.files;
-    if (tapeFiles === null) {
+    const file = ui.fileTape.files?.[0];
+    ui.fileTape.value = "";
+    if (file === undefined) {
         return;
     }
-    const file = tapeFiles[0];
-    ui.fileTape.value = "";
-    if (file !== undefined) {
-        readFile(file, "arraybuffer", function (err, buf) {
-            if (err !== null) {
-                setStatus(ui.tapeInfo, err, true);
-                return;
-            }
-            const tap = {
-                name: file.name,
-                bytes: buf,
-            };
-            applyTap(tap);
-        });
-    }
+    readFile(file, "arraybuffer", function (err, buf) {
+        if (err !== null) {
+            setStatus(ui.tapeInfo, err, true);
+            return;
+        }
+        const tap = {
+            name: file.name,
+            bytes: buf,
+        };
+        applyTap(tap);
+    });
 };
 
 ui.loadCart.onclick = function () {
@@ -143,27 +142,24 @@ ui.loadCart.onclick = function () {
 };
 
 ui.fileCart.onchange = function () {
-    const cartFiles = ui.fileCart.files;
-    if (cartFiles === null) {
+    const file = ui.fileCart.files?.[0];
+    ui.fileCart.value = "";
+    if (file === undefined) {
         return;
     }
-    const file = cartFiles[0];
-    ui.fileCart.value = "";
-    if (file !== undefined) {
-        readFile(file, "arraybuffer", function (err, buf) {
-            if (err !== null) {
-                setStatus(ui.cartInfo, err, true);
-                return;
-            }
-            const cart = {
-                name: file.name,
-                bytes: buf,
-            };
-            if (applyCart(cart)) {
-                env.cartInserted = true;
-            }
-        });
-    }
+    readFile(file, "arraybuffer", function (err, buf) {
+        if (err !== null) {
+            setStatus(ui.cartInfo, err, true);
+            return;
+        }
+        const cart = {
+            name: file.name,
+            bytes: buf,
+        };
+        if (applyCart(cart)) {
+            env.cartInserted = true;
+        }
+    });
 };
 
 ui.ejectCart.onclick = function () {
@@ -196,6 +192,14 @@ ui.nmi.onclick = function () {
 
 ui.keyboardToggle.onclick = function () {
     toggleKeyboard();
+};
+
+ui.crt.onchange = function () {
+    setCrt(env.gfx, ui.crt.checked);
+};
+
+ui.fullscreenToggle.onclick = function () {
+    toggleCanvasFullscreen();
 };
 
 window.onresize = function () {
@@ -327,11 +331,7 @@ function storeFetchedRom(slot, url, byteLength, infoEl, err, buf) {
  * @param {HTMLElement} infoEl
  */
 function pickRom(slot, input, byteLength, infoEl) {
-    const files = input.files;
-    if (files === null) {
-        return;
-    }
-    const file = files[0];
+    const file = input.files?.[0];
     input.value = "";
     if (file === undefined) {
         return;
@@ -404,6 +404,7 @@ function loadShaders(onDone) {
 function handleGfx(err, gfx) {
     env.gfx = gfx;
     env.gfxErr = err;
+    setCrt(env.gfx, ui.crt.checked);
     checkEnv();
 }
 
@@ -634,29 +635,31 @@ function toggleCanvasFullscreen() {
 
 function enterSlotFullscreen() {
     const slot = ui.screen.parentElement;
-    if (slot === null || slot.requestFullscreen === undefined) {
+    if (slot?.requestFullscreen === undefined) {
         env.screenOnlyFallback = true;
         setScreenOnly(true);
         return;
     }
-    const p = slot.requestFullscreen();
-    if (p !== undefined) {
-        p.then(function () {}, function () {
+    slot.requestFullscreen()?.then(
+        function () {
+        },
+        function () {
             env.screenOnlyFallback = true;
             setScreenOnly(true);
-        });
-    }
+        },
+    );
 }
 
 function leaveFullscreen() {
     env.screenOnlyFallback = false;
     if (document.fullscreenElement !== null && document.exitFullscreen !== undefined) {
-        const p = document.exitFullscreen();
-        if (p !== undefined) {
-            p.then(function () {}, function () {
+        document.exitFullscreen()?.then(
+            function () {
+            },
+            function () {
                 setScreenOnly(false);
-            });
-        }
+            },
+        );
         return;
     }
     setScreenOnly(false);

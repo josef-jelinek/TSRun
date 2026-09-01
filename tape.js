@@ -108,7 +108,7 @@ export function armTape(tape, tstates) {
 /**
  * @param {Tape} tape
  * @param {number} tstates
- * @param {function(number, number): void} [onEdge]
+ * @param {function(number, number): void} onEdge
  * @returns {number}
  */
 export function earLevel(tape, tstates, onEdge) {
@@ -121,9 +121,7 @@ export function earLevel(tape, tstates, onEdge) {
     while (tstates >= tape.nextT && tape.playing) {
         const tEdge = tape.nextT;
         advanceEdge(tape);
-        if (onEdge !== undefined) {
-            onEdge(tEdge, tape.level);
-        }
+        onEdge(tEdge, tape.level);
     }
     if (!tape.playing) {
         return 1;

@@ -122,6 +122,9 @@ button:active,
     display: block;
     image-rendering: pixelated;
 }
+#screen.crt {
+    image-rendering: auto;
+}
 #keyboard {
     display: flex;
     flex-direction: column;
@@ -172,6 +175,8 @@ button:active,
         <button id="reset">Reset</button>
         <button id="nmi" title="Non-maskable interrupt">NMI</button>
         <button id="keyboard-toggle" title="Onscreen keyboard (F1)">Keyboard</button>
+        <label class="switch" title="CRT display filter"><input id="crt" type="checkbox"> CRT</label>
+        <button id="fullscreen-toggle" title="Fullscreen (F11)">Fullscreen</button>
         <div id="top-info" class="media-info">Initializing...</div>
         <a href="https://github.com/josef-jelinek/TSRun">GitHub repo</a>
     </div>

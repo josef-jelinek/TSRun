@@ -27,6 +27,24 @@ const ayRegIoA = 14;
 const ayAmpEnvMode = 0x10;
 const ayMixerPortAOut = 0x40;
 
+const ayResetState = {
+    noiseLfsr: 1,
+    noiseCounter: 0,
+    noiseLevel: 0,
+    clockDividerPhase: false,
+    areaA: 0,
+    areaB: 0,
+    areaC: 0,
+};
+
+const ayEnvResetState = {
+    counter: 0,
+    step: 0,
+    attack: false,
+    holding: false,
+    level: 0,
+};
+
 /**
  * @typedef {{
  *   counter: number,
@@ -71,21 +89,9 @@ export function createAy(tickT) {
         regs: new Uint8Array(16),
         toneCounter: new Uint32Array(3),
         toneLevel: new Uint8Array(3),
-        noiseLfsr: 1,
-        noiseCounter: 0,
-        noiseLevel: 0,
-        env: {
-            counter: 0,
-            step: 0,
-            attack: false,
-            holding: false,
-            level: 0,
-        },
-        clockDividerPhase: false,
+        ...ayResetState,
+        env: {...ayEnvResetState},
         out: new Float64Array(3),
-        areaA: 0,
-        areaB: 0,
-        areaC: 0,
     };
     resetAy(ay, 0);
     return ay;
@@ -100,20 +106,10 @@ export function resetAy(ay, t) {
     ay.regs[ayRegMixer] = 0x3F;
     ay.toneCounter.fill(0);
     ay.toneLevel.fill(0);
-    ay.noiseLfsr = 1;
-    ay.noiseCounter = 0;
-    ay.noiseLevel = 0;
-    ay.env.counter = 0;
-    ay.env.step = 0;
-    ay.env.attack = false;
-    ay.env.holding = false;
-    ay.env.level = 0;
-    ay.clockDividerPhase = false;
+    Object.assign(ay, ayResetState);
+    Object.assign(ay.env, ayEnvResetState);
     ay.t = t;
     ay.nextTickT = t + ay.tickT;
-    ay.areaA = 0;
-    ay.areaB = 0;
-    ay.areaC = 0;
     ayRefreshLevels(ay);
 }
 

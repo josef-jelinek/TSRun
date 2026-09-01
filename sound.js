@@ -44,10 +44,7 @@ export function initSound(sampleRate, onDone) {
             };
 
             sfx.node.port.onmessage = function (e) {
-                if (e.data === null || e.data === undefined) {
-                    return;
-                }
-                if (e.data.type === "need" && typeof e.data.remain === "number") {
+                if (e.data?.type === "need" && typeof e.data.remain === "number") {
                     sfx.queuedSamples = e.data.remain;
                 }
             };

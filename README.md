@@ -46,6 +46,9 @@ checking during development (`tsc --noEmit` or `npx --yes tsc --noEmit`).
 - NMI - pulse the Z80 NMI pin (`PC=0x0066`). The stock ROM returns immediately;
   a program that installed an NMI handler will run it.
 - Keyboard - show or hide the TS 2068 keyboard under the screen (also F1).
+- CRT - fit the display continuously and add rounded pixels, horizontal color
+  bleed and scanlines. The unfiltered integer-scaled display is the default.
+- Fullscreen - show only the fullscreen emulator canvas (also F11).
 - Load TAP - insert a `.tap`. Playback waits until `LOAD ""` is running so
   the header is not missed. At the `K` cursor press J (`LOAD`), then `""` and
   Enter. Border bars still show while the block loads.
@@ -98,13 +101,17 @@ are Symbol Shift. Extra mappings:
 under the screen. The emulator display scales to the remaining space. Overlay
 keys can be clicked; they light when the matching matrix bits are down.
 
-**F11** makes the page fullscreen with only the emulator canvas (4:3, integer
-scaled). Escape or F11 again restores the header.
+**F11** or the Fullscreen button makes the page fullscreen with only the
+emulator canvas (4:3, integer scaled). Escape or F11 again restores the header.
 
 ## Display
 
 The visible picture is the SCLD output: 256x192 paper (512x192 in hi-res) with
 a border, integer-scaled to a 4:3 rectangle in the window.
+
+The optional CRT mode fills the available 4:3 area and renders at the physical
+display resolution. It adds restrained horizontal color bleed and scanlines,
+without distortion, chromatic aberration, bloom, noise or a vignette.
 
 The picture is drawn by following the beam rather than by grabbing the display
 file once per frame. The raster is free-running at 224 T-states per line and
