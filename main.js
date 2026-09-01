@@ -59,7 +59,7 @@ const ui = {
     nmi: /** @type {HTMLButtonElement} */ (document.getElementById("nmi")),
     screen: /** @type {HTMLCanvasElement} */ (document.getElementById("screen")),
     keyboard: /** @type {HTMLElement} */ (document.getElementById("keyboard")),
-    keyboardToggle: /** @type {HTMLButtonElement} */ (document.getElementById("keyboard-toggle")),
+    keyboardToggle: /** @type {HTMLInputElement} */ (document.getElementById("keyboard-toggle")),
     crt: /** @type {HTMLInputElement} */ (document.getElementById("crt")),
     fullscreenToggle: /** @type {HTMLButtonElement} */ (document.getElementById("fullscreen-toggle")),
     turbo: /** @type {HTMLInputElement} */ (document.getElementById("turbo")),
@@ -190,8 +190,8 @@ ui.nmi.onclick = function () {
     requestNmi(env.machine);
 };
 
-ui.keyboardToggle.onclick = function () {
-    toggleKeyboard();
+ui.keyboardToggle.onchange = function () {
+    setKeyboardShown(ui.keyboardToggle.checked);
 };
 
 ui.crt.onchange = function () {
@@ -621,7 +621,13 @@ function setStatus(el, text, isError) {
 }
 
 function toggleKeyboard() {
-    env.keyboardShown = !env.keyboardShown;
+    setKeyboardShown(!env.keyboardShown);
+}
+
+/** @param {boolean} shown */
+function setKeyboardShown(shown) {
+    env.keyboardShown = shown;
+    ui.keyboardToggle.checked = shown;
     applyVisibility();
 }
 

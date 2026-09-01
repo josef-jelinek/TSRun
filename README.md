@@ -47,7 +47,7 @@ checking during development (`tsc --noEmit` or `npx --yes tsc --noEmit`).
   a program that installed an NMI handler will run it.
 - Keyboard - show or hide the TS 2068 keyboard under the screen (also F1).
 - CRT - fit the display continuously and add rounded pixels, horizontal color
-  bleed and scanlines. The unfiltered integer-scaled display is the default.
+  bleed and scanlines. When off, the display is unfiltered integer-scaled.
 - Fullscreen - show only the fullscreen emulator canvas (also F11).
 - Load TAP - insert a `.tap`. Playback waits until `LOAD ""` is running so
   the header is not missed. At the `K` cursor press J (`LOAD`), then `""` and
@@ -97,7 +97,7 @@ are Symbol Shift. Extra mappings:
 - Tab - EDIT (Caps Shift + 1)
 - `.` `,` `;` `"` `-` `=` `/` - the usual Symbol Shift pairs
 
-**F1** or the Keyboard button shows or hides the original TS 2068 keyboard
+**F1** or the Keyboard switch shows or hides the original TS 2068 keyboard
 under the screen. The emulator display scales to the remaining space. Overlay
 keys can be clicked; they light when the matching matrix bits are down.
 
