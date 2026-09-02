@@ -8,6 +8,14 @@
  */
 
 /**
+ * @typedef {{type: "reset"}
+ *     | {type: "frame-samples", value: number}
+ *     | {type: "pan", near: number, center: number, far: number}
+ *     | ({type: "data"} & WorkletChunk)
+ * } WorkletMessage
+ */
+
+/**
  * @typedef {{
  *   chunks: WorkletChunk[],
  *   head: number,
@@ -31,12 +39,13 @@ function TSRunProcessor() {
     p.head = 0;
     p.offset = 0;
     p.waiting = false;
-    p.panNear = 0.85;
+    // Hardware mono, until a "pan" message spreads the channels out.
+    p.panNear = 0.5;
     p.panCenter = 0.5;
-    p.panFar = 0.15;
+    p.panFar = 0.5;
     p.masterGain = 24000 / 32768;
     p.ulaGain = 0.20;
-    p.frameSamples = 44100 / 60;
+    p.frameSamples = 44100 / (3528000 / 58688); // replaced by "frame-samples"
 
     p.port.onmessage = function (e) {
         if (e.data !== null && e.data !== undefined) {
@@ -58,7 +67,7 @@ registerProcessor("tsrun-out", TSRunProcessor);
 
 /**
  * @param {WorkletProc} p
- * @param {{type: string, value?: number, ula?: Float32Array, channelA?: Float32Array, channelB?: Float32Array, channelC?: Float32Array}} data
+ * @param {WorkletMessage} data
  */
 function handleMessage(p, data) {
     switch (data.type) {
@@ -69,21 +78,26 @@ function handleMessage(p, data) {
         p.waiting = false;
         return;
     case "frame-samples":
-        if (typeof data.value === "number" && data.value > 0) {
+        if (data.value > 0) {
             p.frameSamples = data.value;
         }
         return;
-    case "data":
-        if (data.channelA !== undefined && data.ula !== undefined) {
-            p.chunks.push({
-                ula: data.ula,
-                channelA: data.channelA,
-                channelB: data.channelB,
-                channelC: data.channelC,
-            });
-            p.waiting = false;
-            request(p, 128);
+    case "pan":
+        if (Number.isFinite(data.near) && Number.isFinite(data.center) && Number.isFinite(data.far)) {
+            p.panNear = data.near;
+            p.panCenter = data.center;
+            p.panFar = data.far;
         }
+        return;
+    case "data":
+        p.chunks.push({
+            ula: data.ula,
+            channelA: data.channelA,
+            channelB: data.channelB,
+            channelC: data.channelC,
+        });
+        p.waiting = false;
+        request(p, 128);
         return;
     }
 }

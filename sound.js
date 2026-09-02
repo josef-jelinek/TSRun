@@ -1,3 +1,14 @@
+// The SCLD frame is 262 lines of 224 T-states, so the machine runs at
+// 3528000 / 58688 Hz. Duplicated from machine.js, as the frame sizes are.
+const framesPerSecond = 3528000 / 58688;
+
+// Output weights for the near, centre and far channel positions. The TS 2068
+// sums the three PSG outputs into one analog path, so mono is what the hardware
+// does and the spread is only a listening convenience. Both sets total 1.5 per
+// output channel, so left plus right is identical either way.
+const monoPan = {near: 0.5, center: 0.5, far: 0.5};
+const stereoPan = {near: 0.85, center: 0.5, far: 0.15};
+
 /**
  * @typedef {{
  *   frameSampleCount: number,
@@ -29,7 +40,7 @@ export function initSound(sampleRate, onDone) {
     context.audioWorklet.addModule("sound.worklet.js").then(
         function () {
             const sfx = {
-                frameSampleCount: Math.round(context.sampleRate / 60),
+                frameSampleCount: Math.round(context.sampleRate / framesPerSecond),
                 context,
                 node: new AudioWorkletNode(
                     context,
@@ -88,6 +99,20 @@ export function resumeSound(sfx) {
     if (sfx.context.state === "suspended") {
         sfx.context.resume();
     }
+}
+
+// Spread the AY channels across the stereo image, or sum them the way the
+// single analog output on the machine does.
+/**
+ * @param {Sfx} sfx
+ * @param {boolean} on
+ */
+export function setSoundStereo(sfx, on) {
+    let pan = monoPan;
+    if (on) {
+        pan = stereoPan;
+    }
+    sfx.node.port.postMessage({type: "pan", near: pan.near, center: pan.center, far: pan.far});
 }
 
 /**
