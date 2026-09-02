@@ -34,7 +34,7 @@
 
 /** @returns {WorkletProc} */
 function TSRunProcessor() {
-    const p = Reflect.construct(AudioWorkletProcessor, [], TSRunProcessor);
+    const p = /** @type {WorkletProc} */ (Reflect.construct(AudioWorkletProcessor, [], TSRunProcessor));
     p.chunks = [];
     p.head = 0;
     p.offset = 0;
@@ -168,6 +168,7 @@ function request(p, quantum) {
     }
 }
 
+/** @param {WorkletProc} p */
 function compact(p) {
     const remain = p.chunks.length - p.head;
     for (let i = 0; i < remain; i += 1) {
