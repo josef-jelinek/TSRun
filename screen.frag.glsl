@@ -7,23 +7,47 @@ uniform bool u_crt;
 in vec2 v_uv;
 out vec4 o_color;
 
-// Fixed TS 2068 colors addressed by the byte stored for each machine pixel.
+// TS 2068 palette. Index is the colour value, bit 0 blue, bit 1 red, bit 2
+// green, plus 8 when BRIGHT is set. These values are derived from the model
+// below rather than measured from hardware.
+//
+// Hue uses the chroma vector angles of Technical Manual Section 2.1.11.1, but
+// only the TS 2068 minus NTSC differences (blue 0, magenta +2, red +4, green
+// +2, cyan 0, yellow 0 degrees), which cancels the systematic error in that
+// table: its own NTSC column is off by up to 8.5 degrees. The corrections are
+// thus smaller than the noise floor of their source and shift no visible
+// channel by more than 8 counts. The "Reference 224" row is deliberately not
+// applied. The colour rows are vectorscope targets, which are burst-relative by
+// definition, so the burst sits at 180 in that frame by construction and
+// subtracting 224 would decode cyan as green.
+//
+// Luma is a model, since the manual gives no level steps and its schematic
+// section is "under construction". Normal colours span 0.80 and BRIGHT adds a
+// constant 0.20, so bright white reaches the reference white of Figure
+// 2.1.11-1. That offset is constant in the signal domain, and composite volts
+// and sRGB codes are both gamma encoded, so under common CRT gamma it stays a
+// constant code offset. Light goes as V^2.2, which is why one constant turns
+// black into a clearly grey background while white barely changes.
+//
+// The BRIGHT path itself is undocumented: the hardware chapter never mentions
+// it and names only R, G and B as DAC inputs. That it lifts black on this
+// machine is hardware behaviour, not something the manual establishes.
 const uvec3 color_palette[16] = uvec3[16](
     uvec3(0x00u, 0x00u, 0x00u), // black
-    uvec3(0x01u, 0x00u, 0xCEu), // blue
-    uvec3(0xCFu, 0x01u, 0x00u), // red
-    uvec3(0xCFu, 0x01u, 0xCEu), // magenta
-    uvec3(0x00u, 0xCFu, 0x15u), // green
-    uvec3(0x01u, 0xCFu, 0xCFu), // cyan
-    uvec3(0xCFu, 0xCFu, 0x15u), // yellow
-    uvec3(0xCFu, 0xCFu, 0xCFu), // white
-    uvec3(0x60u, 0x60u, 0x60u), // bright black
-    uvec3(0x02u, 0x00u, 0xFAu), // bright blue
-    uvec3(0xFFu, 0x02u, 0x01u), // bright red
-    uvec3(0xFFu, 0x02u, 0xFAu), // bright magenta
-    uvec3(0x00u, 0xFFu, 0x1Cu), // bright green
-    uvec3(0x02u, 0xFFu, 0xFFu), // bright cyan
-    uvec3(0xFFu, 0xFFu, 0x1Du), // bright yellow
+    uvec3(0x00u, 0x00u, 0xCCu), // blue
+    uvec3(0xC9u, 0x05u, 0x00u), // red
+    uvec3(0xCEu, 0x00u, 0xC4u), // magenta
+    uvec3(0x00u, 0xCCu, 0x08u), // green
+    uvec3(0x00u, 0xCCu, 0xCCu), // cyan
+    uvec3(0xCCu, 0xCCu, 0x00u), // yellow
+    uvec3(0xCCu, 0xCCu, 0xCCu), // white
+    uvec3(0x33u, 0x33u, 0x33u), // bright black
+    uvec3(0x33u, 0x33u, 0xFFu), // bright blue
+    uvec3(0xFCu, 0x38u, 0x33u), // bright red
+    uvec3(0xFFu, 0x33u, 0xF7u), // bright magenta
+    uvec3(0x33u, 0xFFu, 0x3Bu), // bright green
+    uvec3(0x33u, 0xFFu, 0xFFu), // bright cyan
+    uvec3(0xFFu, 0xFFu, 0x33u), // bright yellow
     uvec3(0xFFu, 0xFFu, 0xFFu)  // bright white
 );
 

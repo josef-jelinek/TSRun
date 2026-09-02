@@ -52,18 +52,14 @@ export function initScreen(canvas, shaders, onGfx) {
 }
 
 /**
- * @param {Gfx | null} gfx
+ * @param {Gfx} gfx
  * @param {boolean} on
  */
 export function setCrt(gfx, on) {
-    if (gfx === null) {
-        return;
-    }
     gfx.crtOn = on;
-    const gl = gfx.gl;
-    gl.uniform1i(gfx.crtLoc, Number(on));
-    const canvas = /** @type {HTMLCanvasElement} */ (gl.canvas);
-    if (on) {
+    gfx.gl.uniform1i(gfx.crtLoc, Number(gfx.crtOn));
+    const canvas = /** @type {HTMLCanvasElement} */ (gfx.gl.canvas);
+    if (gfx.crtOn) {
         canvas.classList.add("crt");
     } else {
         canvas.classList.remove("crt");
@@ -71,13 +67,9 @@ export function setCrt(gfx, on) {
     resizeScreen(gfx);
 }
 
-/** @param {Gfx | null} gfx */
+/** @param {Gfx} gfx */
 export function resizeScreen(gfx) {
-    if (gfx === null) {
-        return;
-    }
-    const gl = gfx.gl;
-    const canvas = /** @type {HTMLCanvasElement} */ (gl.canvas);
+    const canvas = /** @type {HTMLCanvasElement} */ (gfx.gl.canvas);
     const workspace = canvas.parentElement;
     if (gfx.crtOn) {
         let width = viewW;
@@ -103,7 +95,7 @@ export function resizeScreen(gfx) {
         if (canvas.height !== bufferHeight) {
             canvas.height = bufferHeight;
         }
-        gl.viewport(0, 0, canvas.width, canvas.height);
+        gfx.gl.viewport(0, 0, canvas.width, canvas.height);
         return;
     }
     let scale = 1;
@@ -122,17 +114,14 @@ export function resizeScreen(gfx) {
     if (canvas.height !== frameH) {
         canvas.height = frameH;
     }
-    gl.viewport(0, 0, frameW, frameH);
+    gfx.gl.viewport(0, 0, frameW, frameH);
 }
 
 /**
- * @param {Gfx | null} gfx
+ * @param {Gfx} gfx
  * @param {Uint8Array} pixels
  */
 export function drawScreen(gfx, pixels) {
-    if (gfx === null) {
-        return;
-    }
     const gl = gfx.gl;
     gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, frameW, frameH, gl.RED_INTEGER, gl.UNSIGNED_BYTE, pixels);
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);

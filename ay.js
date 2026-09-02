@@ -148,13 +148,14 @@ export function ayWriteReg(ay, reg, value) {
 /**
  * @param {Ay} ay
  * @param {number} reg
+ * @param {number} portAIn level held on the I/O port A pins by whatever is wired there
  * @returns {number}
  */
-export function ayReadReg(ay, reg) {
+export function ayReadReg(ay, reg, portAIn) {
     const addr = reg & 0x0F;
     if (addr === ayRegIoA) {
         if ((ay.regs[ayRegMixer] & ayMixerPortAOut) === 0) {
-            return 0xFF;
+            return portAIn & 0xFF;
         }
         return ay.regs[addr];
     }

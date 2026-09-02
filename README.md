@@ -48,6 +48,8 @@ checking during development (`tsc --noEmit` or `npx --yes tsc --noEmit`).
 - Keyboard - show or hide the TS 2068 keyboard under the screen (also F1).
 - CRT - fit the display continuously and add rounded pixels, horizontal color
   bleed and scanlines. When off, the display is unfiltered integer-scaled.
+- Stereo - spread the three AY channels across the stereo image. Off by
+  default, since the machine mixes everything into one mono output.
 - Fullscreen - show only the fullscreen emulator canvas (also F11).
 - Load TAP - insert a `.tap` or `.tzx`, or a `.zip` holding one. Playback
   waits until `LOAD ""` is running so the header is not missed. At the `K`
@@ -111,7 +113,7 @@ archive are not played.
 
 The ULA speaker (port `FE` bit 4) and the AY-3-8912 (ports `F5`/`F6`) are
 mixed in the browser. A click or key may be required before anything is
-audible. The machine runs at 60 Hz wall-clock; about one video frame of
+audible. The machine runs at 60.1145 Hz wall-clock; about one video frame of
 samples is queued so `BEEP` and tape edges stay in time.
 
 Both sources are integrated on the CPU clock. The AY runs on its own tick grid
@@ -121,8 +123,11 @@ happens. Each output sample is the time-weighted average over its window, so an
 envelope retrigger lands where the program put it instead of being rounded to
 the nearest sample. `BEEP` uses the
 ULA; `SOUND register,value` talks to the AY. Tape EAR is mixed quietly so
-loading can be heard. The real 2068 is mono; AY channels are panned ABC for
-convenience.
+loading can be heard. The machine sums the three AY channels and the beeper into
+one analog output, so the default here is mono as well. The Stereo switch
+spreads the AY channels ABC across the image, which makes individual voices
+easier to pick out. Both mixes carry the same total signal, so switching between
+them does not change the level.
 
 ## Keyboard
 
@@ -143,6 +148,22 @@ keys can be clicked; they light when the matching matrix bits are down.
 **F11** or the Fullscreen button makes the page fullscreen with only the
 emulator canvas (4:3, integer scaled). Escape or F11 again restores the header.
 
+## Joysticks
+
+The two joystick ports are read through I/O port A of the AY-3-8912, not through
+the key matrix. A program selects AY register 14 by writing `14` to port `F5`,
+then reads port `F6` with the player number in `B`, since address bit 8 strobes
+the left stick and bit 9 the right. Data is active low: bits 0-3 are up, down,
+left and right, bit 7 is the button, and the rest read as 1.
+
+Both ports are driven by host gamepads through the browser Gamepad API, polled
+once per animation frame. The first two connected pads become player 1 and
+player 2 whichever slots they occupy, so a single pad always drives player 1. A
+direction is on when the matching d-pad button is down or the left stick is
+pushed past halfway, and any face or shoulder button is the fire button. A
+browser only reports a pad once it has been used, so press one of its buttons
+first if nothing responds.
+
 ## Display
 
 The visible picture is the SCLD output: 256x192 paper (512x192 in hi-res) with
@@ -154,8 +175,8 @@ without distortion, chromatic aberration, bloom, noise or a vignette.
 
 The picture is drawn by following the beam rather than by grabbing the display
 file once per frame. The raster is free-running at 224 T-states per line and
-262.5 lines per frame (exactly the 58800 T-states of one 60 Hz frame), and one
-T-state is two pixels. Anything the raster reads - the border, the port `FF`
+262 lines per frame (exactly the 58688 T-states of one 60.1145 Hz frame), and
+one T-state is two pixels. Anything the raster reads - the border, the port `FF`
 mode, screen memory, attributes - is sampled at the position the beam has
 reached, so mid-frame changes split the screen the way they do on hardware.
 Writes to display memory need no special handling: the beam only paints the
@@ -167,8 +188,8 @@ select the screen mode (`OUT 255,n` from BASIC):
 - `2` - hi-color: pixels from screen 0, 8x1 attributes from the matching byte
   in screen 1 (`addr + 0x2000`, same Y encoding as the bitmap).
 - `6` - hi-res 512x192, two colors. Even 8-pixel columns from screen 0, odd
-  from screen 1. Ink/paper (and the border) come from bits 5-3, always bright;
-  `OUT 255,6` is black on white.
+  from screen 1. Ink/paper (and the border) come from bits 5-3, with bright and
+  flash fixed off by the SCLD; `OUT 255,6` is black on white.
 
 Stock BASIC still prints to screen 0. Hi-color and hi-res reuse `0x6000`-`0x7AFF`,
 where the ROM keeps a RAM copy of the OS, so those modes need machine code that
@@ -176,7 +197,7 @@ moves the stack and system variables first.
 
 The start screen is white paper, white border, and two copyright lines at the
 bottom. During tape load the ROM changes the border on each EAR edge, which the
-beam renders as bars that break mid-line, as on hardware. Bit 6 of port `FF` inhibits the 60 Hz interrupt.
+beam renders as bars that break mid-line, as on hardware. Bit 6 of port `FF` inhibits the frame interrupt.
 
 ## Repository files
 
@@ -187,6 +208,7 @@ beam renders as bars that break mid-line, as on hardware. Bit 6 of port `FF` inh
 - `machine.js` - memory map, Timex paging ports, and frame run.
 - `z80.js` - Z80 CPU.
 - `keyboard.js` - host keyboard mapping and the F1 overlay.
+- `joystick.js` - host gamepads read as the two TS 2068 joystick ports.
 - `tape.js` - tape blocks with their timings, TAP parse, and cassette EAR pulses.
 - `tzx.js` - TZX parse into tape blocks.
 - `zip.js` - ZIP listing and member inflate, for local `.zip` files.

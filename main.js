@@ -31,6 +31,8 @@ import {
     formatSize,
 } from "./archive.js";
 
+import {initJoysticks, pollJoysticks} from "./joystick.js";
+
 import {
     initKeyboard,
     handleKeyDown,
@@ -44,12 +46,16 @@ import {
     resumeSound,
     resetSound,
     pushSound,
+    setSoundStereo,
     soundIsRunning,
     soundQueueReady,
 } from "./sound.js";
 
 const soundSampleHz = 44100;
-const frameMs = 1000 / 60;
+// The SCLD frame is 262 lines of 224 T-states, so the machine runs at
+// 3528000 / 58688 Hz. Duplicated from machine.js, as the frame sizes are.
+const framesPerSecond = 3528000 / 58688;
+const frameMs = 1000 / framesPerSecond;
 const turboFrames = 100;
 
 const homeRomSize = 16384;
@@ -79,6 +85,7 @@ const ui = {
     keyboard: /** @type {HTMLElement} */ (document.getElementById("keyboard")),
     keyboardToggle: /** @type {HTMLInputElement} */ (document.getElementById("keyboard-toggle")),
     crt: /** @type {HTMLInputElement} */ (document.getElementById("crt")),
+    stereo: /** @type {HTMLInputElement} */ (document.getElementById("stereo")),
     fullscreenToggle: /** @type {HTMLButtonElement} */ (document.getElementById("fullscreen-toggle")),
     turbo: /** @type {HTMLInputElement} */ (document.getElementById("turbo")),
     typeLoad: /** @type {HTMLInputElement} */ (document.getElementById("type-load")),
@@ -93,6 +100,8 @@ const ui = {
 };
 
 const keyMatrix = new Uint8Array(8);
+const joystick = new Uint8Array(2);
+initJoysticks(joystick);
 
 /**
  * @typedef {{
@@ -142,7 +151,7 @@ const keyMatrix = new Uint8Array(8);
  * }}
  */
 const env = {
-    machine: createMachine(keyMatrix),
+    machine: createMachine(keyMatrix, joystick),
     kbd: initKeyboard(ui.keyboard, keyMatrix),
     gfx: null,
     gfxErr: null,
@@ -289,7 +298,15 @@ ui.keyboardToggle.onchange = function () {
 };
 
 ui.crt.onchange = function () {
-    setCrt(env.gfx, ui.crt.checked);
+    if (env.gfx !== null) {
+        setCrt(env.gfx, ui.crt.checked);
+    }
+};
+
+ui.stereo.onchange = function () {
+    if (env.sfx !== null) {
+        setSoundStereo(env.sfx, ui.stereo.checked);
+    }
 };
 
 ui.fullscreenToggle.onclick = function () {
@@ -297,7 +314,9 @@ ui.fullscreenToggle.onclick = function () {
 };
 
 window.onresize = function () {
-    resizeScreen(env.gfx);
+    if (env.gfx !== null) {
+        resizeScreen(env.gfx);
+    }
 };
 
 // The header grows and shrinks with the archive panel and with status text
@@ -534,7 +553,6 @@ function loadShaders(onDone) {
 function handleGfx(err, gfx) {
     env.gfx = gfx;
     env.gfxErr = err;
-    setCrt(env.gfx, ui.crt.checked);
     checkEnv();
 }
 
@@ -560,12 +578,16 @@ function checkEnv() {
         return; // sfx still being initialized
     }
     if (!env.ready) {
+        // Setup machine and sound only once.
         if (env.sfx !== null) {
+            setSoundStereo(env.sfx, ui.stereo.checked);
             setSoundRate(env.machine, env.sfx.context.sampleRate);
             enableSound(env.machine, true);
         }
         env.ready = true;
     }
+    // Graphics context can be reinitialized multiple times.
+    setCrt(env.gfx, ui.crt.checked);
     if (env.sfxErr !== null) {
         setStatus(ui.topInfo, "Ready. No sound: " + env.sfxErr, true);
         return;
@@ -586,6 +608,7 @@ function onFrame(now) {
     if (env.gfx === null) {
         return;
     }
+    pollJoysticks(joystick);
     if (env.lastNow === 0) {
         env.lastNow = now;
         env.carryMs = frameMs;
@@ -1166,5 +1189,7 @@ function applyVisibility() {
     }
     ui.pageHeader.style.display = header;
     ui.keyboard.style.display = keyboard;
-    resizeScreen(env.gfx);
+    if (env.gfx !== null) {
+        resizeScreen(env.gfx);
+    }
 }

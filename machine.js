@@ -5,7 +5,7 @@ import {createAy, resetAy, aySeek, ayRunTo, ayRunSilent, ayTakeSample, ayWriteRe
 
 const homeRomSize = 16384;
 const exRomSize = 8192;
-const tStatesPerFrame = 58800;
+const tStatesPerFrame = 58688;
 const cpuHz = 3528000;
 const ayClockHz = cpuHz / 2;
 // Tone counters run at the AY clock over 8, which is one tick every 16 CPU
@@ -27,8 +27,11 @@ const dfile0 = 0x4000;
 const dfile1 = 0x6000;
 const dfileSize = 0x1B00;
 
-// Beam map. The SCLD raster is free-running: 224 T-states per line and 262.5
-// lines per frame, which is exactly the 58800 T-states above. One T-state is
+// Beam map. The SCLD raster is free-running: 224 T-states per line and 262
+// lines per frame, which is exactly the 58688 T-states above. Both come from
+// the SCLD video counter chain, which divides the 1.764 MHz video clock by 16
+// and then by 7 for one line, and the line counter by 262 for one frame, so
+// the frame rate is 60.1145 Hz rather than a round 60. One T-state is
 // two normal pixels, and the buffer runs at the hi-res clock, so one T-state
 // is four buffer columns. Line 0 column 0 is the moment of the frame
 // interrupt, which is what raster code times against.
@@ -62,6 +65,7 @@ const windowStartT = activeStartT - scrX / tPerColumn;
  *   dfileStart: number,
  *   dfileEnd: number,
  *   keyMatrix: Uint8Array,
+ *   joystick: Uint8Array,
  *   tstates: number,
  *   stepAdded: number,
  *   frameStart: number,
@@ -102,9 +106,10 @@ const windowStartT = activeStartT - scrX / tPerColumn;
 
 /**
  * @param {Uint8Array} keyMatrix
+ * @param {Uint8Array} joystick one active-low contact byte per stick
  * @returns {Machine}
  */
-export function createMachine(keyMatrix) {
+export function createMachine(keyMatrix, joystick) {
     /** @type {Machine} */
     let m;
     m = {
@@ -128,6 +133,7 @@ export function createMachine(keyMatrix) {
         dfileStart: dfile0,
         dfileEnd: dfile0 + dfileSize,
         keyMatrix,
+        joystick,
         tstates: 0,
         stepAdded: 0,
         frameStart: 0,
@@ -497,7 +503,7 @@ function ioRead(m, port) {
     case 0xF5:
         return 0xFF;
     case 0xF6:
-        return ayReadReg(m.ay, m.ayLatch);
+        return ayReadReg(m.ay, m.ayLatch, readJoysticks(m, port));
     case 0xFF:
         return m.portFF;
     default:
@@ -507,6 +513,27 @@ function ioRead(m, port) {
         return readKeys(m, port);
     }
     return 0xFF;
+}
+
+// Both sticks are read through AY I/O port A. A8 drives the read strobe of the
+// left (player 1) stick low and A9 that of the right, so B holds the player
+// number in the usual IN A,(C) sequence. The contacts pull their bit down
+// through isolation diodes, which is why strobing both at once merges them and
+// why an unstrobed read floats high.
+/**
+ * @param {Machine} m
+ * @param {number} port
+ * @returns {number}
+ */
+function readJoysticks(m, port) {
+    let bits = 0xFF;
+    if ((port & 0x0100) !== 0) {
+        bits &= m.joystick[0];
+    }
+    if ((port & 0x0200) !== 0) {
+        bits &= m.joystick[1];
+    }
+    return bits;
 }
 
 /**
@@ -653,7 +680,7 @@ function drawLineSpan(m, line, t0, t1) {
     const mode = m.portFF & 7;
     let border = m.border & 7;
     if ((mode & 4) !== 0) {
-        border = (((m.portFF >> 3) & 7) + 8) ^ 7;
+        border = ((m.portFF >> 3) & 7) ^ 7;
     }
     const sy = line - activeStartLine;
     if (sy < 0 || sy >= scrH) {
@@ -699,7 +726,9 @@ function paintScreenSpan(m, y, sy, x0, x1, mode) {
     const col0 = (x0 - scrX) >> 4;
     const colEnd = ((x1 - scrX) + 15) >> 4;
     if ((mode & 4) !== 0) {
-        const ink = ((m.portFF >> 3) & 7) + 8;
+        // Bits 5-3 pick the ink and the paper is its complement. The SCLD fixes
+        // bright and flash off in these modes, so the ink is not made bright.
+        const ink = (m.portFF >> 3) & 7;
         const paper = ink ^ 7;
         let leftAddr = dfile0 + lineAddr;
         let rightAddr = dfile1 + lineAddr;
