@@ -298,9 +298,18 @@ export function insertTap(m, bytes) {
     if (parsed.err !== null) {
         return parsed.err;
     }
-    insertTape(m.tape, parsed.blocks, m.tstates);
-    setUlaLevel(m);
+    insertTapeBlocks(m, parsed.blocks);
     return null;
+}
+
+/**
+ * Insert already parsed blocks, from a TAP or a TZX.
+ * @param {Machine} m
+ * @param {import("./tape.js").TapeBlock[]} blocks
+ */
+export function insertTapeBlocks(m, blocks) {
+    insertTape(m.tape, blocks, m.tstates);
+    setUlaLevel(m);
 }
 
 /**

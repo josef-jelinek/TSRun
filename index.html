@@ -99,6 +99,59 @@ button:active,
     font-weight: 600;
     color: var(--accent);
 }
+input[type="search"] {
+    flex: 1;
+    min-width: 8em;
+    padding: 5px 8px;
+    border: 1px solid #666;
+    border-radius: var(--control-radius);
+    background: #222;
+    color: var(--ink);
+}
+#archive-panel {
+    padding-top: 4px;
+    border-top: 1px solid var(--line);
+}
+.archive-columns {
+    align-items: stretch;
+}
+.archive-list {
+    flex: 1;
+    min-width: 0;
+    max-height: 32vh;
+    overflow: auto;
+    border: 1px solid var(--line);
+    border-radius: var(--control-radius);
+}
+.archive-list:empty {
+    display: none;
+}
+.archive-item,
+.archive-file {
+    display: block;
+    width: 100%;
+    padding: 3px 8px;
+    border: 0;
+    border-radius: 0;
+    box-sizing: border-box;
+    font-weight: normal;
+    text-align: left;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.archive-item {
+    background: none;
+}
+.archive-item.selected {
+    color: var(--accent);
+}
+.archive-file {
+    color: var(--muted);
+}
+.archive-file a {
+    color: var(--muted);
+}
 #workspace {
     display: flex;
     flex: 1;
@@ -183,9 +236,11 @@ button:active,
     <div class="rowbox">
         <div class="colbox colbox-stretch">
             <div class="rowbox">
-                <button id="load-tape">Load TAP</button>
-                <input id="file-tape" type="file" accept=".tap" style="display: none">
+                <button id="load-tape" title="Open a .tap, .tzx or .zip file">Load TAP</button>
+                <input id="file-tape" type="file" accept=".tap, .tzx, .zip" style="display: none">
+                <button id="browse-archive" title="Timex Sinclair Software Archive on archive.org">Archive</button>
                 <label class="switch"><input id="turbo" type="checkbox" checked>Turbo</label>
+                <label class="switch" title="Type LOAD &quot;&quot; when a tape is inserted"><input id="type-load" type="checkbox" checked>Type LOAD</label>
                 <div id="tape-info" class="media-info">No tape</div>
             </div>
             <div class="rowbox">
@@ -206,6 +261,19 @@ button:active,
                 <input id="file-rom1" type="file" accept=".rom, .bin" style="display: none">
                 <div id="rom1-info" class="media-info">No EXROM file</div>
             </div>
+        </div>
+    </div>
+    <div id="archive-panel" class="colbox" style="display: none">
+        <div class="rowbox">
+            <input id="archive-search" type="search" placeholder="Search titles" autocomplete="off" spellcheck="false">
+            <label class="switch" title="Hide titles tagged for the TS 1000, TS 1500, ZX81 or ZX Spectrum"><input id="archive-ts2068" type="checkbox" checked>TS2068</label>
+            <div id="archive-info" class="media-info"></div>
+            <a id="archive-link" href="https://archive.org/details/timex-sinclair-software-archive" target="_blank" rel="noopener">archive.org</a>
+            <button id="archive-close">Close</button>
+        </div>
+        <div class="rowbox archive-columns">
+            <div id="archive-list" class="archive-list"></div>
+            <div id="archive-members" class="archive-list"></div>
         </div>
     </div>
 </header>

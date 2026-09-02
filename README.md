@@ -49,9 +49,18 @@ checking during development (`tsc --noEmit` or `npx --yes tsc --noEmit`).
 - CRT - fit the display continuously and add rounded pixels, horizontal color
   bleed and scanlines. When off, the display is unfiltered integer-scaled.
 - Fullscreen - show only the fullscreen emulator canvas (also F11).
-- Load TAP - insert a `.tap`. Playback waits until `LOAD ""` is running so
-  the header is not missed. At the `K` cursor press J (`LOAD`), then `""` and
-  Enter. Border bars still show while the block loads.
+- Load TAP - insert a `.tap` or `.tzx`, or a `.zip` holding one. Playback
+  waits until `LOAD ""` is running so the header is not missed. At the `K`
+  cursor press J (`LOAD`), then `""` and Enter. Border bars still show while
+  the block loads. A `.zip` with one tape image inserts it at once; with more
+  than one, the archive panel opens to choose from.
+- Archive - on the TAP row, after Load TAP. Opens a panel that browses the
+  [Timex Sinclair Software Archive](https://archive.org/details/timex-sinclair-software-archive)
+  on archive.org. See [Archive](#archive) below.
+- Type LOAD - on the TAP row. When checked (the default), inserting a tape
+  also types `LOAD ""` and Enter through the key matrix, so a program loads
+  with one click. Uncheck it to type the command yourself, for example when a
+  program is running and should not be interrupted.
 - Turbo - on the TAP row, after Load TAP. When checked (the default), CPU
   and tape run many times faster than realtime once the loader is sampling EAR.
   Uncheck for ROM-speed playback with the leader tone. T-state custom loaders
@@ -67,6 +76,36 @@ checking during development (`tsc --noEmit` or `npx --yes tsc --noEmit`).
 
 Reset does not eject a tape or cartridge. After Eject, or with no cartridge, the
 ROM should return to the copyright start screen.
+
+## Archive
+
+The Archive button lists the ZIP files of the
+[Timex Sinclair Software Archive](https://archive.org/details/timex-sinclair-software-archive)
+item on archive.org. Type in the search box to filter titles by words; every
+word must appear somewhere in the file name. The TS2068 switch hides titles
+tagged for the TS 1000, TS 1500, ZX81 or ZX Spectrum, since those do not run
+on the 2068 natively. Escape closes the panel while the search box has focus.
+
+Clicking a title lists the files in its ZIP. The only `.tap` is inserted at
+once; failing that the only `.tzx`, and failing that the only `.dck`. With
+more than one, click the file to insert. Other files, such as `.txt` notes or
+`.wav` recordings, link to archive.org.
+
+Nothing is unpacked in the browser. archive.org serves the listing of a ZIP
+at `download/<item>/<zip>/` and any member at `download/<item>/<zip>/<file>`,
+and both allow cross-origin reads, while the raw ZIP files do not. Metadata
+comes from `https://archive.org/metadata/<item>/files`.
+
+A program that was inserted from the archive is recorded in the page URL as
+`?zip=<zip name>&file=<member>`, so the URL can be shared as a link to that
+program. `?zip=` alone picks the tape from the ZIP as a click would.
+
+`.tzx` images play through the same EAR line as `.tap`. Standard, turbo,
+pure tone, pulse sequence, pure data and direct recording blocks are played
+with their own timings; loops, jumps and call sequences are unrolled; a
+"stop the tape" pause parks the tape until `LOAD ""` runs again. CSW and
+generalized data blocks are not supported. Cassette `.wav` recordings in the
+archive are not played.
 
 ## Sound
 
@@ -148,7 +187,10 @@ beam renders as bars that break mid-line, as on hardware. Bit 6 of port `FF` inh
 - `machine.js` - memory map, Timex paging ports, and frame run.
 - `z80.js` - Z80 CPU.
 - `keyboard.js` - host keyboard mapping and the F1 overlay.
-- `tape.js` - TAP files and cassette EAR pulses.
+- `tape.js` - tape blocks with their timings, TAP parse, and cassette EAR pulses.
+- `tzx.js` - TZX parse into tape blocks.
+- `zip.js` - ZIP listing and member inflate, for local `.zip` files.
+- `archive.js` - archive.org index, ZIP listing and member fetch.
 - `dock.js` - Warajevo `.dck` cartridge parse.
 - `ay.js` - AY-3-8912 sound chip.
 - `sound.js` - Web Audio host and worklet loader.

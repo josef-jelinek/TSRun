@@ -1,4 +1,5 @@
-const pauseT = 3528000;
+const cpuHz = 3528000;
+const pauseT = cpuHz; // 1 s between TAP blocks
 const pilotT = 2168;
 const sync1T = 667;
 const sync2T = 735;
@@ -8,14 +9,35 @@ const pilotHeader = 8063;
 const pilotData = 3223;
 
 /**
+ * One recorded block. A TAP block uses the ROM timings; a TZX block can
+ * change any of them, or leave out parts: a pure tone has only a pilot, a
+ * pulse sequence has only `pulses`, and a pause has nothing at all.
+ * Durations are in T-states.
  * @typedef {{
- *   blocks: Uint8Array[],
+ *   pulses: number[],
+ *   pilotT: number,
+ *   pilotPulses: number,
+ *   sync1T: number,
+ *   sync2T: number,
+ *   bit0T: number,
+ *   bit1T: number,
+ *   data: Uint8Array,
+ *   lastBits: number,
+ *   pauseT: number,
+ *   stop: boolean,
+ * }} TapeBlock
+ */
+
+/**
+ * @typedef {{
+ *   blocks: TapeBlock[],
  *   playing: boolean,
  *   waiting: boolean,
  *   level: number,
  *   nextT: number,
  *   block: number,
  *   phase: string,
+ *   pulseI: number,
  *   pulseLeft: number,
  *   byteI: number,
  *   bitI: number,
@@ -24,12 +46,69 @@ const pilotData = 3223;
  */
 
 /**
- * @typedef {{err: string, blocks: null} | {err: null, blocks: Uint8Array[]}} TapParse
+ * @typedef {{err: string, blocks: null} | {err: null, blocks: TapeBlock[]}} TapeParse
  */
 
 /**
+ * A block with the ROM loader timings, as saved by SAVE.
+ * @param {Uint8Array} data
+ * @param {number} pause
+ * @returns {TapeBlock}
+ */
+export function standardBlock(data, pause) {
+    let pilotPulses = pilotData;
+    if (data.length > 0 && data[0] < 128) {
+        pilotPulses = pilotHeader;
+    }
+    return {
+        pulses: [],
+        pilotT: pilotT,
+        pilotPulses: pilotPulses,
+        sync1T: sync1T,
+        sync2T: sync2T,
+        bit0T: bit0T,
+        bit1T: bit1T,
+        data: data,
+        lastBits: 8,
+        pauseT: pause,
+        stop: false,
+    };
+}
+
+/**
+ * A block with nothing to play. With a pause it is silence; with `stop` it
+ * parks the tape until `LOAD ""` is waiting again.
+ * @param {number} pause
+ * @param {boolean} stop
+ * @returns {TapeBlock}
+ */
+export function silentBlock(pause, stop) {
+    return {
+        pulses: [],
+        pilotT: 0,
+        pilotPulses: 0,
+        sync1T: 0,
+        sync2T: 0,
+        bit0T: 0,
+        bit1T: 0,
+        data: new Uint8Array(0),
+        lastBits: 8,
+        pauseT: pause,
+        stop: stop,
+    };
+}
+
+/**
+ * @param {number} ms
+ * @returns {number}
+ */
+export function msToT(ms) {
+    return Math.round(ms * cpuHz / 1000);
+}
+
+/**
  * @param {ArrayBuffer | Uint8Array} bytes
- * @returns {TapParse}
+ * @returns {TapeParse}
  */
 export function parseTap(bytes) {
     const u8 = new Uint8Array(bytes);
@@ -47,7 +126,7 @@ export function parseTap(bytes) {
         if (i + n > u8.length) {
             return {err: "Truncated TAP block.", blocks: null};
         }
-        blocks.push(u8.subarray(i, i + n));
+        blocks.push(standardBlock(u8.subarray(i, i + n), pauseT));
         i += n;
     }
     if (blocks.length === 0) {
@@ -66,6 +145,7 @@ export function createTape() {
         nextT: 0,
         block: 0,
         phase: "pause",
+        pulseI: 0,
         pulseLeft: 0,
         byteI: 0,
         bitI: 0,
@@ -75,7 +155,7 @@ export function createTape() {
 
 /**
  * @param {Tape} tape
- * @param {Uint8Array[]} blocks
+ * @param {TapeBlock[]} blocks
  * @param {number} tstates
  */
 export function insertTape(tape, blocks, tstates) {
@@ -86,6 +166,7 @@ export function insertTape(tape, blocks, tstates) {
     tape.nextT = tstates;
     tape.block = 0;
     tape.phase = "pause";
+    tape.pulseI = 0;
     tape.pulseLeft = 0;
     tape.byteI = 0;
     tape.bitI = 0;
@@ -118,7 +199,7 @@ export function earLevel(tape, tstates, onEdge) {
     if (tape.waiting) {
         return tape.level;
     }
-    while (tstates >= tape.nextT && tape.playing) {
+    while (tstates >= tape.nextT && tape.playing && !tape.waiting) {
         const tEdge = tape.nextT;
         advanceEdge(tape);
         onEdge(tEdge, tape.level);
@@ -131,29 +212,32 @@ export function earLevel(tape, tstates, onEdge) {
 
 /** @param {Tape} tape */
 function advanceEdge(tape) {
+    const block = tape.blocks[tape.block];
     switch (tape.phase) {
     case "pause":
-        startPilot(tape);
+        enterPhase(tape, "pulses");
+        break;
+    case "pulses":
+        tape.pulseI += 1;
+        if (tape.pulseI === block.pulses.length) {
+            enterPhase(tape, "pilot");
+        } else {
+            flip(tape, block.pulses[tape.pulseI]);
+        }
         break;
     case "pilot":
         tape.pulseLeft -= 1;
         if (tape.pulseLeft === 0) {
-            tape.phase = "sync1";
-            flip(tape, sync1T);
+            enterPhase(tape, "sync1");
         } else {
-            flip(tape, pilotT);
+            flip(tape, block.pilotT);
         }
         break;
     case "sync1":
-        tape.phase = "sync2";
-        flip(tape, sync2T);
+        enterPhase(tape, "sync2");
         break;
     case "sync2":
-        tape.phase = "data";
-        tape.byteI = 0;
-        tape.bitI = 0;
-        tape.half = 0;
-        flip(tape, bitDuration(tape));
+        enterPhase(tape, "data");
         break;
     default:
         advanceData(tape);
@@ -161,19 +245,62 @@ function advanceEdge(tape) {
     }
 }
 
-/** @param {Tape} tape */
-function startPilot(tape) {
-    tape.phase = "pilot";
-    if (tape.blocks[tape.block][0] === 0) {
-        tape.pulseLeft = pilotHeader;
-    } else {
-        tape.pulseLeft = pilotData;
+/**
+ * Begin the given part of the current block, or the next part that the block
+ * actually has. A block with nothing left to play ends here.
+ * @param {Tape} tape
+ * @param {string} phase
+ */
+function enterPhase(tape, phase) {
+    const block = tape.blocks[tape.block];
+    if (phase === "pulses") {
+        if (block.pulses.length > 0) {
+            tape.phase = "pulses";
+            tape.pulseI = 0;
+            flip(tape, block.pulses[0]);
+            return;
+        }
+        phase = "pilot";
     }
-    flip(tape, pilotT);
+    if (phase === "pilot") {
+        if (block.pilotPulses > 0) {
+            tape.phase = "pilot";
+            tape.pulseLeft = block.pilotPulses;
+            flip(tape, block.pilotT);
+            return;
+        }
+        phase = "sync1";
+    }
+    if (phase === "sync1") {
+        if (block.sync1T > 0) {
+            tape.phase = "sync1";
+            flip(tape, block.sync1T);
+            return;
+        }
+        phase = "sync2";
+    }
+    if (phase === "sync2") {
+        if (block.sync2T > 0) {
+            tape.phase = "sync2";
+            flip(tape, block.sync2T);
+            return;
+        }
+        phase = "data";
+    }
+    if (block.data.length > 0) {
+        tape.phase = "data";
+        tape.byteI = 0;
+        tape.bitI = 0;
+        tape.half = 0;
+        flip(tape, bitDuration(tape));
+        return;
+    }
+    finishBlock(tape);
 }
 
 /** @param {Tape} tape */
 function advanceData(tape) {
+    const block = tape.blocks[tape.block];
     if (tape.half === 0) {
         tape.half = 1;
         flip(tape, bitDuration(tape));
@@ -181,10 +308,14 @@ function advanceData(tape) {
     }
     tape.half = 0;
     tape.bitI += 1;
-    if (tape.bitI === 8) {
+    let bitsInByte = 8;
+    if (tape.byteI === block.data.length - 1) {
+        bitsInByte = block.lastBits;
+    }
+    if (tape.bitI >= bitsInByte) {
         tape.bitI = 0;
         tape.byteI += 1;
-        if (tape.byteI === tape.blocks[tape.block].length) {
+        if (tape.byteI === block.data.length) {
             finishBlock(tape);
             return;
         }
@@ -194,14 +325,22 @@ function advanceData(tape) {
 
 /** @param {Tape} tape */
 function finishBlock(tape) {
+    const block = tape.blocks[tape.block];
     tape.level = 1;
     tape.block += 1;
+    tape.phase = "pause";
     if (tape.block >= tape.blocks.length) {
         tape.playing = false;
         return;
     }
-    tape.phase = "pause";
-    tape.nextT += pauseT;
+    // At least one T-state, so the level change of this edge is applied
+    // before the next block flips it again.
+    tape.nextT += Math.max(block.pauseT, 1);
+    if (block.stop) {
+        // Wait for the next LOAD "" before continuing, as with a stop-the-tape
+        // pause in a multi-load program.
+        tape.waiting = true;
+    }
 }
 
 /**
@@ -209,11 +348,12 @@ function finishBlock(tape) {
  * @returns {number}
  */
 function bitDuration(tape) {
-    const byte = tape.blocks[tape.block][tape.byteI];
+    const block = tape.blocks[tape.block];
+    const byte = block.data[tape.byteI];
     if (((byte >> (7 - tape.bitI)) & 1) === 1) {
-        return bit1T;
+        return block.bit1T;
     }
-    return bit0T;
+    return block.bit0T;
 }
 
 /**

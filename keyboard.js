@@ -34,9 +34,15 @@
  *   keyMatrix: Uint8Array,
  *   hostHeld: string[],
  *   pointerHeld: PointerHold[],
+ *   scriptHeld: KeyBit[],
+ *   scriptId: number,
  *   overlayKeys: OverlayKey[],
  * }} Keyboard
  */
+
+// How long a scripted key is held and then released, in ms. The ROM needs a
+// key stable for a few interrupts, and it must not stay long enough to repeat.
+const scriptKeyMs = 100;
 
 const cs = {row: 0, bit: 0};
 const keyZ = {row: 0, bit: 1};
@@ -176,6 +182,8 @@ export function initKeyboard(el, keyMatrix) {
         keyMatrix,
         hostHeld: [],
         pointerHeld: [],
+        scriptHeld: [],
+        scriptId: 0,
         overlayKeys: [],
     };
     for (let r = 0; r < overlayRows.length; r += 1) {
@@ -225,6 +233,50 @@ export function handleBlur(kbd) {
     kbd.hostHeld.length = 0;
     kbd.pointerHeld.length = 0;
     syncKeys(kbd);
+}
+
+/**
+ * Type LOAD "" and Enter at the K cursor: J is the LOAD keyword, and " is
+ * Symbol Shift + P.
+ * @param {Keyboard} kbd
+ */
+export function typeLoad(kbd) {
+    typeChords(kbd, [[keyJ], [ss, keyP], [ss, keyP], [keyEnter]]);
+}
+
+/**
+ * Press the chords one after another through the key matrix, as if typed.
+ * A new sequence cancels one still running.
+ * @param {Keyboard} kbd
+ * @param {KeyBit[][]} chords
+ */
+function typeChords(kbd, chords) {
+    kbd.scriptId += 1;
+    const id = kbd.scriptId;
+    let i = 0;
+    press();
+
+    function press() {
+        if (id !== kbd.scriptId) {
+            return;
+        }
+        if (i >= chords.length) {
+            return;
+        }
+        kbd.scriptHeld = chords[i];
+        syncKeys(kbd);
+        setTimeout(release, scriptKeyMs);
+    }
+
+    function release() {
+        if (id !== kbd.scriptId) {
+            return;
+        }
+        kbd.scriptHeld = [];
+        syncKeys(kbd);
+        i += 1;
+        setTimeout(press, scriptKeyMs);
+    }
 }
 
 /**
@@ -282,6 +334,7 @@ function syncKeys(kbd) {
     for (let i = 0; i < kbd.pointerHeld.length; i += 1) {
         pressBits(kbd, kbd.pointerHeld[i].bits);
     }
+    pressBits(kbd, kbd.scriptHeld);
     paintOverlay(kbd);
 }
 
