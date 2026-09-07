@@ -91,11 +91,12 @@ function handleMessage(p, data) {
         return;
     case "data":
         p.chunks.push({
-            ula: data.ula,
-            channelA: data.channelA,
-            channelB: data.channelB,
-            channelC: data.channelC,
+            ula: new Float32Array(data.ula),
+            channelA: new Float32Array(data.channelA),
+            channelB: new Float32Array(data.channelB),
+            channelC: new Float32Array(data.channelC),
         });
+        dropOldAudio(p);
         p.waiting = false;
         request(p, 128);
         return;
@@ -119,6 +120,11 @@ function process(p, output) {
         }
         const chunk = p.chunks[p.head];
         const take = Math.min(n - i, chunk.channelA.length - p.offset);
+        if (take <= 0) {
+            p.head += 1;
+            p.offset = 0;
+            continue;
+        }
         for (let j = 0; j < take; j += 1) {
             const source = p.offset + j;
             const levelL = chunk.channelA[source];
@@ -154,17 +160,43 @@ function process(p, output) {
  * @param {number} quantum
  */
 function request(p, quantum) {
+    const remain = queuedLength(p);
+    if (!p.waiting && remain < p.frameSamples) {
+        p.waiting = true;
+        p.port.postMessage({type: "need", remain, quantum});
+    }
+}
+
+/** @param {WorkletProc} p */
+function queuedLength(p) {
     let remain = 0;
     for (let i = p.head; i < p.chunks.length; i += 1) {
         let len = p.chunks[i].channelA.length;
         if (i === p.head) {
             len -= p.offset;
         }
-        remain += len;
+        if (len > 0) {
+            remain += len;
+        }
     }
-    if (!p.waiting && remain < p.frameSamples) {
-        p.waiting = true;
-        p.port.postMessage({type: "need", remain, quantum});
+    return remain;
+}
+
+/** @param {WorkletProc} p */
+function dropOldAudio(p) {
+    const cap = p.frameSamples * 2;
+    while (p.head < p.chunks.length - 1 && queuedLength(p) > cap) {
+        p.head += 1;
+        p.offset = 0;
+    }
+    if (p.head >= p.chunks.length) {
+        p.chunks = [];
+        p.head = 0;
+        p.offset = 0;
+        return;
+    }
+    if (p.head > 8) {
+        compact(p);
     }
 }
 

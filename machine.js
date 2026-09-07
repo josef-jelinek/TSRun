@@ -1,30 +1,141 @@
 import {createZ80, resetZ80, runZ80, irqZ80} from "./z80.js";
-import {createTape, parseTap, insertTape, armTape, earLevel} from "./tape.js";
+import {createTape, parseTape, resetTape, startTape, rearmTape, stopTape, earLevel} from "./tape.js";
 import {parseDck} from "./dock.js";
 import {createAy, resetAy, aySeek, ayRunTo, ayRunSilent, ayTakeSample, ayWriteReg, ayReadReg} from "./ay.js";
 
-const homeRomSize = 16384;
-const exRomSize = 8192;
+const homeRomSize     = 16384;
+const exRomSize       = 8192;
 const tStatesPerFrame = 58688;
-const cpuHz = 3528000;
-const ayClockHz = cpuHz / 2;
+const cpuHz           = 3528000;
+const ayClockHz       = cpuHz / 2;
 // Tone counters run at the AY clock over 8, which is one tick every 16 CPU
 // T-states: an exact grid, so the chip needs no rate accumulator.
-const ayTickT = cpuHz / (ayClockHz / 8);
+const ayTickT  = cpuHz / (ayClockHz / 8);
 const audioCap = 8192;
 // How loudly the tape EAR line is mixed under the beeper.
-const earMix = 0.25;
+const earMix          = 0.25;
+const tapePollReads   = 8;
+const tapePollGapT    = 256;
+const tapeLoaderIdleT = cpuHz / 10;
+
+// This is the state reached by the bundled TS2068 ROMs after LOAD "" enters
+// the EXROM leader loop. Code that the ROM copies into RAM comes from the
+// loaded ROM images below; only initialized variables and workspace are kept
+// here.
+const autoloadHomeHash = 0xFB7FAA94;
+const autoloadExHash = 0x6F627310;
+const autoloadSystemRam = Uint8Array.of(
+    0xFF, 0x00, 0x00, 0x00, 0x0D, 0x05, 0x23, 0x0D, 0x0D, 0x23, 0x05, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x01, 0x00, 0x06, 0x00, 0x0B, 0x00, 0x01, 0x00, 0x01, 0x00, 0x06, 0x00, 0x10, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x3C, 0x40, 0x00, 0xFF, 0x9C, 0x01, 0xFC, 0x61, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0xFF, 0xFE, 0xFF, 0x01, 0x38, 0x00, 0x00, 0x56, 0x68, 0x00, 0x00, 0x40,
+    0x68, 0x40, 0x68, 0x56, 0x68, 0x5B, 0x68, 0x55, 0x68, 0x57, 0x68, 0x5A, 0x68, 0x5A, 0x68, 0x00,
+    0x00, 0x5C, 0x68, 0x7E, 0x68, 0x7E, 0x68, 0x1A, 0x92, 0x5C, 0x10, 0x02, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x01, 0x19, 0x00, 0x00, 0x68, 0x00, 0x00, 0x58, 0xFF, 0x00, 0x00, 0x21,
+    0x00, 0x5B, 0x21, 0x17, 0x00, 0x40, 0xE0, 0x50, 0x21, 0x18, 0x21, 0x17, 0x01, 0x38, 0x00, 0x38,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x57, 0xFF, 0xFF, 0xFF, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xEA, 0x5E, 0x00, 0x00,
+    0x00, 0x62, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xFF, 0x00, 0xFF, 0xFF, 0xFF, 0xFF,
+    0xFF, 0xFF, 0x00, 0xFF, 0xFF, 0xFF, 0x80,
+);
+
+const autoloadStackRam = Uint8Array.of(
+    0x2E, 0x09, 0x03, 0x07, 0xE3, 0x50, 0x03, 0x07, 0xE4, 0x50, 0x1D, 0x17, 0xF3, 0x05, 0x03, 0x07,
+    0xE7, 0x50, 0x1A, 0x17, 0xF3, 0x05, 0x23, 0x16, 0x38, 0x00, 0xF4, 0x61, 0xF2, 0x61, 0x00, 0xFF,
+    0x20, 0x0E, 0x59, 0x68, 0x08, 0x00, 0x20, 0x08, 0xF3, 0x61, 0x4D, 0x02, 0x15, 0x01, 0xE5, 0x00,
+    0xE0, 0x04, 0x6D, 0x68, 0x56, 0x68, 0x3C, 0x66, 0x00, 0x00, 0xB9, 0x1A, 0x8D, 0x0E, 0x00, 0x3E,
+);
+
+const autoloadPatchRam = Uint8Array.of(
+    0x00, 0x00, 0x4D, 0x02, 0x00, 0x00, 0x5E, 0x25, 0xCA, 0x65,
+);
+
+const autoloadWorkspaceRam = Uint8Array.of(
+    0x05, 0x0E, 0x0C, 0x4B, 0x00, 0x05, 0xBF, 0x11, 0x53, 0xE7, 0x0A, 0xBF, 0x11, 0x52, 0x00, 0x05,
+    0xBF, 0x11, 0x50, 0x80, 0x00, 0x80, 0xEF, 0x22, 0x22, 0x0D, 0x80, 0x00, 0xFF, 0x20, 0x20, 0x20,
+    0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x00, 0x00, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x80, 0x0D, 0x59, 0x68,
+);
+
+const autoloadCpuState = {
+    a:          0x00,
+    f:          0x50,
+    b:          0x00,
+    c:          0x02,
+    d:          0x00,
+    e:          0x11,
+    h:          0x00,
+    l:          0xE5,
+    a2:         0x00,
+    f2:         0x01,
+    b2:         0x17,
+    c2:         0x21,
+    d2:         0x3A,
+    e2:         0xB6,
+    h2:         0x00,
+    l2:         0x00,
+    xh:         0x68,
+    xl:         0x6D,
+    yh:         0x5C,
+    yl:         0x3A,
+    sp:         0x61EE,
+    pc:         0x0111,
+    i:          0x3F,
+    r:          0x36,
+    iff1:       false,
+    iff2:       false,
+    im:         1,
+    halted:     false,
+    eiDelay:    false,
+    nmiPending: false,
+};
 
 // The following frame sizes are duplicated in canvas setup and machine.js.
 // Buffer is 640x240 (hi-res pixel clock); CSS displays it as 640x480.
-const frameW = 640;
-const frameH = 240;
-const scrX = 64;
-const scrY = 24;
-const scrW = 512;
-const scrH = 192;
-const dfile0 = 0x4000;
-const dfile1 = 0x6000;
+const frameW    = 640;
+const frameH    = 240;
+const scrX      = 64;
+const scrY      = 24;
+const scrW      = 512;
+const scrH      = 192;
+const dfile0    = 0x4000;
+const dfile1    = 0x6000;
 const dfileSize = 0x1B00;
 
 // Beam map. The SCLD raster is free-running: 224 T-states per line and 262
@@ -46,61 +157,72 @@ const windowStartT = activeStartT - scrX / tPerColumn;
 
 /**
  * @typedef {{
- *   homeRom: Uint8Array,
- *   exRom: Uint8Array,
- *   ram: Uint8Array,
- *   dock: (Uint8Array | null)[],
- *   dockRam: boolean[],
- *   exCart: (Uint8Array | null)[],
- *   exCartRam: boolean[],
- *   homeCart: (Uint8Array | null)[],
+ *   pc:     number,
+ *   port:   number,
+ *   firstT: number,
+ *   lastT:  number,
+ *   count:  number,
+ * }} TapePoll
+ */
+
+/**
+ * @typedef {{
+ *   homeRom:     Uint8Array,
+ *   exRom:       Uint8Array,
+ *   ram:         Uint8Array,
+ *   dock:        (Uint8Array | null)[],
+ *   dockRam:     boolean[],
+ *   exCart:      (Uint8Array | null)[],
+ *   exCartRam:   boolean[],
+ *   homeCart:    (Uint8Array | null)[],
  *   homeCartRam: boolean[],
  *   homeRamSave: (Uint8Array | null)[],
- *   portF4: number,
- *   portFF: number,
- *   border: number,
- *   pixels: Uint8Array,
- *   beamT: number,
- *   videoOn: boolean,
- *   dfileStart: number,
- *   dfileEnd: number,
- *   keyMatrix: Uint8Array,
- *   joystick: Uint8Array,
- *   tstates: number,
- *   stepAdded: number,
- *   frameStart: number,
- *   flashFrame: number,
- *   tape: import("./tape.js").Tape,
- *   cpu: import("./z80.js").Z80,
- *   bus: import("./z80.js").Z80Bus,
- *   ay: import("./ay.js").Ay,
- *   ayLatch: number,
- *   ulaOut: number,
- *   earBit: number,
- *   ulaLevel: number,
- *   ulaT: number,
- *   ulaArea: number,
- *   soundOn: boolean,
- *   sampleRate: number,
- *   sampleT: number,
- *   sampleEndT: number,
- *   sampleAcc: number,
- *   audioFill: number,
- *   audioUla: Float32Array,
- *   audioA: Float32Array,
- *   audioB: Float32Array,
- *   audioC: Float32Array,
- *   onEarEdge: function(number, number): void,
+ *   portF4:      number,
+ *   portFF:      number,
+ *   border:      number,
+ *   pixels:      Uint8Array,
+ *   beamT:       number,
+ *   videoOn:     boolean,
+ *   dfileStart:  number,
+ *   dfileEnd:    number,
+ *   keyMatrix:   Uint8Array,
+ *   joystick:    Uint8Array,
+ *   tstates:     number,
+ *   stepAdded:   number,
+ *   frameStart:  number,
+ *   flashFrame:  number,
+ *   tape:        import("./tape.js").Tape,
+ *   tapePoll:    TapePoll,
+ *   cpu:         import("./z80.js").Z80,
+ *   bus:         import("./z80.js").Z80Bus,
+ *   ay:          import("./ay.js").Ay,
+ *   ayLatch:     number,
+ *   ulaOut:      number,
+ *   earBit:      number,
+ *   ulaLevel:    number,
+ *   ulaT:        number,
+ *   ulaArea:     number,
+ *   soundOn:     boolean,
+ *   sampleRate:  number,
+ *   sampleT:     number,
+ *   sampleEndT:  number,
+ *   sampleAcc:   number,
+ *   audioFill:   number,
+ *   audioUla:    Float32Array,
+ *   audioA:      Float32Array,
+ *   audioB:      Float32Array,
+ *   audioC:      Float32Array,
+ *   onEarEdge:   function(number, number): void,
  * }} Machine
  */
 
 /**
  * @typedef {{
- *   n: number,
+ *   n:   number,
  *   ula: Float32Array,
- *   a: Float32Array,
- *   b: Float32Array,
- *   c: Float32Array,
+ *   a:   Float32Array,
+ *   b:   Float32Array,
+ *   c:   Float32Array,
  * }} AudioChunk
  */
 
@@ -113,32 +235,39 @@ export function createMachine(keyMatrix, joystick) {
     /** @type {Machine} */
     let m;
     m = {
-        homeRom: new Uint8Array(homeRomSize),
-        exRom: new Uint8Array(exRomSize),
-        ram: new Uint8Array(65536),
-        dock: emptyPages(),
-        dockRam: emptyFlags(),
-        exCart: emptyPages(),
-        exCartRam: emptyFlags(),
-        homeCart: emptyPages(),
+        homeRom:     new Uint8Array(homeRomSize),
+        exRom:       new Uint8Array(exRomSize),
+        ram:         new Uint8Array(65536),
+        dock:        emptyPages(),
+        dockRam:     emptyFlags(),
+        exCart:      emptyPages(),
+        exCartRam:   emptyFlags(),
+        homeCart:    emptyPages(),
         homeCartRam: emptyFlags(),
         homeRamSave: emptyPages(),
-        portF4: 0,
-        portFF: 0,
-        border: 0,
+        portF4:      0,
+        portFF:      0,
+        border:      0,
         // One byte per pixel indexes the palette in the fragment shader.
-        pixels: new Uint8Array(frameW * frameH),
-        beamT: 0,
-        videoOn: true,
+        pixels:     new Uint8Array(frameW * frameH),
+        beamT:      0,
+        videoOn:    true,
         dfileStart: dfile0,
-        dfileEnd: dfile0 + dfileSize,
+        dfileEnd:   dfile0 + dfileSize,
         keyMatrix,
         joystick,
-        tstates: 0,
-        stepAdded: 0,
+        tstates:    0,
+        stepAdded:  0,
         frameStart: 0,
         flashFrame: 0,
-        tape: createTape(),
+        tape:       createTape(null, 0),
+        tapePoll: {
+            pc: -1,
+            port: -1,
+            firstT: 0,
+            lastT: 0,
+            count: 0,
+        },
         cpu: createZ80(),
         bus: {
             read: function (addr) {
@@ -155,23 +284,23 @@ export function createMachine(keyMatrix, joystick) {
             },
         },
         ay: createAy(ayTickT),
-        ayLatch: 0,
-        ulaOut: 0,
-        earBit: 0,
-        ulaLevel: 0,
-        ulaT: 0,
-        ulaArea: 0,
-        soundOn: false,
+        ayLatch:    0,
+        ulaOut:     0,
+        earBit:     0,
+        ulaLevel:   0,
+        ulaT:       0,
+        ulaArea:    0,
+        soundOn:    false,
         sampleRate: 44100,
-        sampleT: 0,
+        sampleT:    0,
         sampleEndT: 0,
-        sampleAcc: 0,
-        audioFill: 0,
-        audioUla: new Float32Array(audioCap),
-        audioA: new Float32Array(audioCap),
-        audioB: new Float32Array(audioCap),
-        audioC: new Float32Array(audioCap),
-        onEarEdge: function (/** @type {number} */ t, /** @type {number} */ level) {
+        sampleAcc:  0,
+        audioFill:  0,
+        audioUla:   new Float32Array(audioCap),
+        audioA:     new Float32Array(audioCap),
+        audioB:     new Float32Array(audioCap),
+        audioC:     new Float32Array(audioCap),
+        onEarEdge: function (t, level) {
             renderAudioTo(m, t);
             m.earBit = level;
             setUlaLevel(m);
@@ -195,16 +324,20 @@ export function resetMachine(m) {
     m.ayLatch = 0;
     m.ulaOut = 0;
     m.earBit = 0;
-    m.tape.waiting = true;
+    resetTape(m.tape);
+    resetTapePoll(m);
     setUlaLevel(m);
     m.audioFill = 0;
     resyncSound(m);
 }
 
-// The span of RAM the current screen mode actually displays. Only writes in
-// here need to stall the raster; in mode 0 that excludes 0x6000-0x7AFF, where
-// the ROM keeps its RAM copy of the OS and writes constantly.
-/** @param {Machine} m */
+/**
+ * The span of RAM the current screen mode actually displays. Only writes in
+ * here need to stall the raster; in mode 0 that excludes 0x6000-0x7AFF, where
+ * the ROM keeps its RAM copy of the OS and writes constantly.
+ *
+ * @param {Machine} m
+ */
 function setDisplayWatch(m) {
     const mode = m.portFF & 7;
     if (mode === 0) {
@@ -222,9 +355,10 @@ function setDisplayWatch(m) {
     m.dfileEnd = dfile1 + dfileSize;
 }
 
-// Turn raster painting off for frames that will be thrown away, as turbo tape
-// loading does. The beam still advances, it just does not paint.
 /**
+ * Turn raster painting off for frames that will be thrown away, as turbo tape
+ * loading does. The beam still advances, it just does not paint.
+ *
  * @param {Machine} m
  * @param {boolean} on
  */
@@ -237,11 +371,14 @@ export function requestNmi(m) {
     m.cpu.nmiPending = true;
 }
 
-// runZ80 always covers a whole frame in one call: it either overshoots the
-// budget on the final instruction, or, when halted, consumes it exactly
-// because tStatesPerFrame is a multiple of 4. Only a halted CPU can come up
-// short, and then just by the sub-instruction remainder.
-/** @param {Machine} m */
+/**
+ * runZ80 always covers a whole frame in one call: it either overshoots the
+ * budget on the final instruction, or, when halted, consumes it exactly
+ * because tStatesPerFrame is a multiple of 4. Only a halted CPU can come up
+ * short, and then just by the sub-instruction remainder.
+ *
+ * @param {Machine} m
+ */
 export function runFrame(m) {
     const end = m.frameStart + tStatesPerFrame;
     runZ80(m.cpu, m.bus, end - m.tstates, m);
@@ -288,25 +425,82 @@ export function takeAudio(m) {
     return {
         n,
         ula: m.audioUla,
-        a: m.audioA,
-        b: m.audioB,
-        c: m.audioC,
+        a:   m.audioA,
+        b:   m.audioB,
+        c:   m.audioC,
     };
 }
 
 /**
+ * Install a TAP or TZX image. The previous tape is ejected first, including
+ * when the new bytes fail to parse.
+ *
  * @param {Machine} m
  * @param {ArrayBuffer | Uint8Array} bytes
  * @returns {string | null}
  */
-export function insertTap(m, bytes) {
-    const parsed = parseTap(bytes);
+export function insertTape(m, bytes) {
+    const parsed = parseTape(bytes);
     if (parsed.err !== null) {
-        return parsed.err;
+        m.tape = createTape(null, 0);
+    } else {
+        m.tape = createTape(parsed.entries, m.tstates);
     }
-    insertTape(m.tape, parsed.blocks, m.tstates);
+    resetTapePoll(m);
     setUlaLevel(m);
-    return null;
+    return parsed.err;
+}
+
+/**
+ * @param {Machine} m
+ */
+export function ejectTape(m) {
+    m.tape = createTape(null, 0);
+    resetTapePoll(m);
+    setUlaLevel(m);
+}
+
+/**
+ * Put the bundled TS2068 ROM directly into the state reached by LOAD "".
+ * Incompatible ROM and cartridge configurations keep their running state and
+ * can use normal loader detection or the manual Play control instead.
+ *
+ * @param {Machine} m
+ * @returns {boolean}
+ */
+export function autoloadTape(m) {
+    if (m.tape.state !== "ready" || !tapeAutoloadCompatible(m)) {
+        return false;
+    }
+
+    resetMachine(m);
+    m.ram.fill(0);
+    m.ram.fill(0x38, 0x5800, 0x5B00);
+    m.ram.set(autoloadSystemRam, 0x5C00);
+    m.ram.set(m.homeRom.subarray(0x0E0B, 0x0E28), 0x6000);
+    m.ram.set(autoloadStackRam, 0x61C0);
+    m.ram.set(m.exRom.subarray(0x1000, 0x1624), 0x6200);
+    m.ram[0x6315] = 0;
+    m.ram.set(autoloadPatchRam, 0x65C6);
+    m.ram.set(autoloadWorkspaceRam, 0x6841);
+
+    Object.assign(m.cpu, autoloadCpuState);
+    m.portF4 = 0x01;
+    m.portFF = 0x80;
+    m.border = 7;
+    setDisplayWatch(m);
+    m.ayLatch = 14;
+    ayWriteReg(m.ay, m.ayLatch, 0xFF);
+    setUlaLevel(m);
+    return true;
+}
+
+/** @param {Machine} m */
+export function playTape(m) {
+    rearmTape(m.tape);
+    startTape(m.tape, m.tstates);
+    resetTapePoll(m);
+    setUlaLevel(m);
 }
 
 /**
@@ -315,11 +509,11 @@ export function insertTap(m, bytes) {
  * @returns {string | null}
  */
 export function insertDock(m, bytes) {
+    clearCart(m);
     const parsed = parseDck(bytes);
     if (parsed.err !== null) {
         return parsed.err;
     }
-    clearCart(m);
     for (let b = 0; b < parsed.blocks.length; b += 1) {
         applyDckBlock(m, parsed.blocks[b]);
     }
@@ -479,9 +673,10 @@ function memWrite(m, addr, value) {
     m.ram[addr] = value;
 }
 
-// The SCLD decodes its own ports on the full low byte and answers first. The
-// ULA behind it decodes A0 alone, so every other even port is keyboard/EAR.
 /**
+ * The SCLD decodes its own ports on the full low byte and answers first. The
+ * ULA behind it decodes A0 alone, so every other even port is keyboard/EAR.
+ *
  * @param {Machine} m
  * @param {number} port
  * @returns {number}
@@ -506,12 +701,13 @@ function ioRead(m, port) {
     return 0xFF;
 }
 
-// Both sticks are read through AY I/O port A. A8 drives the read strobe of the
-// left (player 1) stick low and A9 that of the right, so B holds the player
-// number in the usual IN A,(C) sequence. The contacts pull their bit down
-// through isolation diodes, which is why strobing both at once merges them and
-// why an unstrobed read floats high.
 /**
+ * Both sticks are read through AY I/O port A. A8 drives the read strobe of the
+ * left (player 1) stick low and A9 that of the right, so B holds the player
+ * number in the usual IN A,(C) sequence. The contacts pull their bit down
+ * through isolation diodes, which is why strobing both at once merges them and
+ * why an unstrobed read floats high.
+ *
  * @param {Machine} m
  * @param {number} port
  * @returns {number}
@@ -539,11 +735,7 @@ function readKeys(m, port) {
             bits &= m.keyMatrix[row];
         }
     }
-    if (m.tape.playing && m.tape.waiting) {
-        if ((m.portF4 & 1) !== 0 && (m.portFF & 0x80) !== 0) {
-            armTape(m.tape, m.tstates);
-        }
-    }
+    noteTapeRead(m, port);
     let ear = 0;
     if (earLevel(m.tape, m.tstates, m.onEarEdge) === 1) {
         ear = 0x40;
@@ -561,6 +753,7 @@ function ioWrite(m, port, value) {
     switch (p) {
     case 0xF4:
         m.portF4 = value & 0xFF;
+        noteRomLoaderIdle(m);
         return;
     case 0xF5:
         renderSound(m, m.tstates);
@@ -574,6 +767,7 @@ function ioWrite(m, port, value) {
         videoRunTo(m, m.tstates);
         m.portFF = value & 0xFF;
         setDisplayWatch(m);
+        noteRomLoaderIdle(m);
         return;
     default:
         break;
@@ -587,9 +781,170 @@ function ioWrite(m, port, value) {
     }
 }
 
-// An NMI is taken by runZ80 as soon as it is requested, so only the maskable
-// 60 Hz interrupt is raised here. Bit 6 of port FF inhibits it.
+/**
+ * Recognize either the stock EXROM loader or a tight custom EAR polling loop.
+ * The first candidate read anchors playback so confirming the loop does not
+ * shorten its first pulse.
+ *
+ * @param {Machine} m
+ * @param {number} port
+ */
+function noteTapeRead(m, port) {
+    const tape = m.tape;
+    const poll = m.tapePoll;
+    const tstates = m.tstates;
+    const gap = tstates - poll.lastT;
+
+    if (tape.state === "blocked") {
+        if (gap >= tapeLoaderIdleT) {
+            rearmTape(tape);
+        } else {
+            poll.count = 0;
+            poll.lastT = tstates;
+            return;
+        }
+    }
+    if (tape.state === "playing") {
+        // Keyboard IN FE (ROM interrupt or a key-wait loop) must not look
+        // like a loader or leftover blocks keep rolling after STOP THE TAPE.
+        if (romTapeLoaderActive(m)) {
+            poll.lastT = tstates;
+            return;
+        }
+        const playingPort = port & 0xFFFF;
+        if (poll.count > 0 && poll.pc === m.cpu.pc && poll.port === playingPort && gap <= tapePollGapT) {
+            poll.count += 1;
+            poll.lastT = tstates;
+        } else {
+            poll.pc = m.cpu.pc;
+            poll.port = playingPort;
+            poll.count = 1;
+        }
+        return;
+    }
+    if (tape.state !== "ready") {
+        poll.count = 0;
+        poll.lastT = tstates;
+        return;
+    }
+    if (romTapeLoaderActive(m)) {
+        startTape(tape, tstates);
+        poll.count = 0;
+        poll.lastT = tstates;
+        return;
+    }
+
+    const fullPort = port & 0xFFFF;
+    if (poll.count > 0 && poll.pc === m.cpu.pc && poll.port === fullPort && gap <= tapePollGapT) {
+        poll.count += 1;
+    } else {
+        poll.pc = m.cpu.pc;
+        poll.port = fullPort;
+        poll.firstT = tstates;
+        poll.count = 1;
+    }
+    poll.lastT = tstates;
+    if (poll.count >= tapePollReads) {
+        const firstT = poll.firstT;
+        poll.count = 0;
+        startTape(tape, firstT);
+    }
+}
+
+/**
+ * A stopped tape may resume as soon as the stock loader pages out.
+ *
+ * @param {Machine} m
+ */
+function noteRomLoaderIdle(m) {
+    if (!romTapeLoaderActive(m)) {
+        rearmTape(m.tape);
+    }
+}
+
+/**
+ * The ROM tape loader runs from the EXROM, so the machine is sampling EAR only
+ * while chunk 0 is paged to it and the Timex EXROM enable is on.
+ *
+ * @param {Machine} m
+ * @returns {boolean}
+ */
+function romTapeLoaderActive(m) {
+    return (m.portF4 & 1) !== 0 && (m.portFF & 0x80) !== 0;
+}
+
+/**
+ * A TAP/TZX still has pause and later blocks after LOAD has started the
+ * program. Keep rolling only while a loader is sampling EAR; ordinary
+ * keyboard scans of port FE do not count, or a STOP THE TAPE screen
+ * would never halt the transport.
+ *
+ * @param {Machine} m
+ * @param {number} untilT
+ */
+function stopTapeIfLoaderIdle(m, untilT) {
+    if (m.tape.state !== "playing") {
+        return;
+    }
+    if (romTapeLoaderActive(m)) {
+        return;
+    }
+    if (untilT - m.tapePoll.lastT < tapeLoaderIdleT) {
+        return;
+    }
+    stopTape(m.tape);
+    setUlaLevel(m);
+}
+
 /** @param {Machine} m */
+function resetTapePoll(m) {
+    m.tapePoll.pc = -1;
+    m.tapePoll.port = -1;
+    m.tapePoll.firstT = m.tstates;
+    m.tapePoll.lastT = m.tstates;
+    m.tapePoll.count = 0;
+}
+
+/**
+ * The saved loader state depends on the exact bundled ROM code and on there
+ * being no cartridge mappings for it to collide with.
+ *
+ * @param {Machine} m
+ * @returns {boolean}
+ */
+function tapeAutoloadCompatible(m) {
+    if (romHash(m.homeRom) !== autoloadHomeHash || romHash(m.exRom) !== autoloadExHash) {
+        return false;
+    }
+    for (let i = 0; i < 8; i += 1) {
+        if (m.dock[i] !== null || m.exCart[i] !== null || m.homeCart[i] !== null || m.homeRamSave[i] !== null) {
+            return false;
+        }
+    }
+    return true;
+}
+
+/**
+ * Fingerprint a ROM without adding a second copy of it solely for comparison.
+ *
+ * @param {Uint8Array} bytes
+ * @returns {number}
+ */
+function romHash(bytes) {
+    let hash = 0x811C9DC5;
+    for (let i = 0; i < bytes.length; i += 1) {
+        hash ^= bytes[i];
+        hash = Math.imul(hash, 0x01000193) >>> 0;
+    }
+    return hash;
+}
+
+/**
+ * An NMI is taken by runZ80 as soon as it is requested, so only the maskable
+ * 60 Hz interrupt is raised here. Bit 6 of port FF inhibits it.
+ *
+ * @param {Machine} m
+ */
 function endRasterFrame(m) {
     if ((m.portFF & 0x40) === 0) {
         m.tstates += irqZ80(m.cpu, m.bus);
@@ -602,12 +957,13 @@ function endRasterFrame(m) {
     m.flashFrame = (m.flashFrame + 1) & 0xFF;
 }
 
-// Draw the picture from wherever the beam was left up to untilT. Every caller
-// flushes here before changing anything the raster reads - the border, the port
-// FF mode, display memory - so a program racing the beam gets the same split the
-// hardware would produce. The beam paints lazily, so a flush that is skipped
-// does not just delay the change, it applies it to scanlines already scanned.
 /**
+ * Draw the picture from wherever the beam was left up to untilT. Every caller
+ * flushes here before changing anything the raster reads - the border, the port
+ * FF mode, display memory - so a program racing the beam gets the same split the
+ * hardware would produce. The beam paints lazily, so a flush that is skipped
+ * does not just delay the change, it applies it to scanlines already scanned.
+ *
  * @param {Machine} m
  * @param {number} untilT
  */
@@ -616,10 +972,7 @@ function videoRunTo(m, untilT) {
         return; // fast path: display writes call in far more often than the beam moves
     }
     const frameEnd = m.frameStart + tStatesPerFrame;
-    let to = untilT;
-    if (to > frameEnd) {
-        to = frameEnd;
-    }
+    const to = Math.min(untilT, frameEnd);
     if (to <= m.beamT) {
         return;
     }
@@ -634,19 +987,17 @@ function videoRunTo(m, untilT) {
     while (from < to) {
         const line = Math.floor((from - m.frameStart) / tPerLine);
         const lineStart = m.frameStart + line * tPerLine;
-        let segEnd = lineStart + tPerLine;
-        if (segEnd > to) {
-            segEnd = to;
-        }
+        const segEnd = Math.min(lineStart + tPerLine, to);
         drawLineSpan(m, line, from - lineStart, segEnd - lineStart);
         from = segEnd;
     }
     m.beamT = to;
 }
 
-// Paint one scanline between two T-states within that line, splitting it into
-// left border, active area, and right border.
 /**
+ * Paint one scanline between two T-states within that line, splitting it into
+ * left border, active area, and right border.
+ *
  * @param {Machine} m
  * @param {number} line
  * @param {number} t0
@@ -657,14 +1008,8 @@ function drawLineSpan(m, line, t0, t1) {
     if (y < 0 || y >= frameH) {
         return;
     }
-    let x0 = (t0 - windowStartT) * tPerColumn;
-    let x1 = (t1 - windowStartT) * tPerColumn;
-    if (x0 < 0) {
-        x0 = 0;
-    }
-    if (x1 > frameW) {
-        x1 = frameW;
-    }
+    const x0 = Math.max((t0 - windowStartT) * tPerColumn, 0);
+    const x1 = Math.min((t1 - windowStartT) * tPerColumn, frameW);
     if (x1 <= x0) {
         return;
     }
@@ -700,9 +1045,10 @@ function drawLineSpan(m, line, t0, t1) {
     }
 }
 
-// Paint the active-area part of one scanline. The source addresses and colours
-// are decided once per span, not once per character column.
 /**
+ * Paint the active-area part of one scanline. The source addresses and colours
+ * are decided once per span, not once per character column.
+ *
  * @param {Machine} m
  * @param {number} y
  * @param {number} sy
@@ -796,10 +1142,11 @@ function fillLine(pixels, x, y, w, color) {
     pixels.fill(color, dst, dst + w);
 }
 
-// Paint 8 source pixels, each pixW buffer columns wide. Only the first and last
-// character column of a span can straddle the clip edges, so the common case
-// takes the unchecked loop.
 /**
+ * Paint 8 source pixels, each pixW buffer columns wide. Only the first and last
+ * character column of a span can straddle the clip edges, so the common case
+ * takes the unchecked loop.
+ *
  * @param {Uint8Array} pixels
  * @param {number} x
  * @param {number} y
@@ -829,15 +1176,17 @@ function putBits(pixels, x, y, bits, ink, paper, pixW, clipL, clipR) {
     }
 }
 
-// Emit output samples as exact time-weighted averages. Everything that can
-// change the signal - a beeper edge, an AY register write, a tape edge - flushes
-// through here first, so each change is integrated from the T-state it really
-// happened rather than being snapped to a sample boundary.
 /**
+ * Emit output samples as exact time-weighted averages. Everything that can
+ * change the signal - a beeper edge, an AY register write, a tape edge - flushes
+ * through here first, so each change is integrated from the T-state it really
+ * happened rather than being snapped to a sample boundary.
+ *
  * @param {Machine} m
  * @param {number} untilT
  */
 function renderSound(m, untilT) {
+    stopTapeIfLoaderIdle(m, untilT);
     if (!m.soundOn) {
         // Nothing is listening, but the AY is still a running piece of hardware.
         // Keep its counters, noise and envelope advancing so state that should
@@ -852,9 +1201,10 @@ function renderSound(m, untilT) {
     renderAudioTo(m, untilT);
 }
 
-// Advance the audio clocks without advancing the tape. Tape callbacks use this
-// directly so several pending EAR edges cannot run ahead of sample boundaries.
 /**
+ * Advance the audio clocks without advancing the tape. Tape callbacks use this
+ * directly so several pending EAR edges cannot run ahead of sample boundaries.
+ *
  * @param {Machine} m
  * @param {number} untilT
  */
@@ -863,13 +1213,25 @@ function renderAudioTo(m, untilT) {
         ulaRunTo(m, untilT);
         return;
     }
+    const maxFill = Math.ceil(m.sampleRate * tStatesPerFrame / cpuHz) + 8;
     while (m.sampleEndT <= untilT) {
+        if (m.audioFill >= maxFill) {
+            // Behind by more than one frame: keep this frame's samples and
+            // jump the clocks, or the worklet would play a backlog of EAR.
+            aySeek(m.ay, untilT);
+            m.ulaT = untilT;
+            m.ulaArea = 0;
+            m.sampleAcc = 0;
+            m.sampleEndT = untilT;
+            nextSampleWindow(m);
+            return;
+        }
         ayRunTo(m.ay, m.sampleEndT);
         ulaRunTo(m, m.sampleEndT);
         const period = m.sampleEndT - m.sampleT;
         let at = m.audioFill;
         if (at >= audioCap) {
-            at = audioCap - 1; // buffer full: overwrite rather than drift
+            at = audioCap - 1;
         } else {
             m.audioFill += 1;
         }
@@ -882,9 +1244,10 @@ function renderAudioTo(m, untilT) {
     ulaRunTo(m, untilT);
 }
 
-// Integrate the beeper line, which is a plain step function, up to an exact
-// T-state. The guard also absorbs a tape edge reported very slightly late.
 /**
+ * Integrate the beeper line, which is a plain step function, up to an exact
+ * T-state. The guard also absorbs a tape edge reported very slightly late.
+ *
  * @param {Machine} m
  * @param {number} t
  */
@@ -898,24 +1261,29 @@ function ulaRunTo(m, t) {
     m.ulaT = t;
 }
 
-// Mix EAR only while the tape is actually producing signal. Between blocks and
-// at the last edge the tape leaves its line high, and mixing that would park a
-// constant earMix offset in the output: silent DC that eats headroom rather
-// than anything audible. Every tape transition reports an edge after it has
-// updated the tape, so this is re-evaluated whenever the gate can change.
-/** @param {Machine} m */
+/**
+ * Mix EAR only while the tape is producing pulses. Mixing its resting level
+ * during a pause would add silent DC that only eats audio headroom. Every tape
+ * transition reports an edge after it updates the phase, so the gate follows
+ * pulse and pause boundaries exactly.
+ *
+ * @param {Machine} m
+ */
 function setUlaLevel(m) {
     let level = m.ulaOut >>> 4;
     const tape = m.tape;
-    if (m.earBit === 1 && tape.playing && !tape.waiting && tape.phase !== "pause") {
+    if (m.earBit === 1 && tape.state === "playing" && tape.phase !== "start" && tape.phase !== "pause") {
         level += earMix;
     }
     m.ulaLevel = level;
 }
 
-// Sample boundaries land on whole T-states; the accumulator keeps their average
-// spacing at exactly cpuHz / sampleRate even when that is not an integer.
-/** @param {Machine} m */
+/**
+ * Sample boundaries land on whole T-states; the accumulator keeps their average
+ * spacing at exactly cpuHz / sampleRate even when that is not an integer.
+ *
+ * @param {Machine} m
+ */
 function nextSampleWindow(m) {
     m.sampleT = m.sampleEndT;
     m.sampleAcc += cpuHz;

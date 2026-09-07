@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" type="image/x-icon" href="favicon.ico">
+<title>TSRun Archive Browser</title>
+<style>
+:root {
+    color-scheme: dark;
+    --paper: #111;
+    --ink: #EEE;
+    --muted: #999;
+    --line: #333;
+    --accent: #F90;
+    --control-radius: 3.5px;
+}
+html, body {
+    height: 100%;
+    margin: 0;
+    font: 13px/1.2 monospace;
+    background: var(--paper);
+    color: var(--ink);
+}
+body {
+    display: flex;
+    flex-direction: column;
+    min-height: 100%;
+}
+header {
+    padding: 10px 20px;
+    border-bottom: 1px solid var(--line);
+    font-size: 15px;
+}
+.rowbox {
+    display: flex;
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    min-width: 0;
+    gap: 6px;
+}
+a {
+    color: var(--accent);
+}
+button, input {
+    font: inherit;
+}
+button,
+.switch {
+    display: inline-block;
+    padding: 5px 12px;
+    border: 1px solid #666;
+    border-radius: var(--control-radius);
+    font-weight: bold;
+    background: #333;
+    color: var(--ink);
+    cursor: pointer;
+}
+button:hover,
+.switch:hover {
+    background: #444;
+}
+button:active,
+.switch:active {
+    background: #000;
+}
+.switch {
+    position: relative;
+}
+.switch:has(> input[type="checkbox"]:checked) {
+    color: #000;
+    background: var(--accent);
+}
+.switch > input[type="checkbox"] {
+    position: absolute;
+    width: 0;
+    height: 0;
+    margin: 0;
+    opacity: 0;
+    pointer-events: none;
+}
+.media-info {
+    flex: 1;
+    min-width: 0;
+    color: var(--muted);
+}
+.media-info > .error {
+    font-weight: bold;
+    color: var(--accent);
+}
+.path-clip {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    direction: rtl;
+    text-align: left;
+}
+.path-clip > span {
+    direction: ltr;
+    unicode-bidi: isolate;
+    white-space: nowrap;
+}
+#archive-path {
+    min-height: 1.2em;
+}
+#archive-path-sep {
+    padding: 0 0.55em;
+}
+#archive-path-dir:empty + #archive-path-sep {
+    display: none;
+}
+#archive-path-file.media {
+    color: var(--accent);
+}
+#tsrun-link {
+    flex-shrink: 0;
+    margin-left: auto;
+    white-space: nowrap;
+}
+#download-file {
+    flex-shrink: 0;
+}
+#workspace {
+    display: flex;
+    flex: 1;
+    flex-direction: row;
+    min-height: 0;
+    background: var(--paper);
+}
+#archive-pane {
+    display: flex;
+    flex-direction: column;
+    flex: 0 0 40em;
+    min-width: 0;
+    min-height: 0;
+    padding: 0 10px;
+}
+#archive-search {
+    flex-shrink: 0;
+    flex-wrap: nowrap;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--line);
+}
+#archive-query {
+    flex: 1;
+    min-width: 0;
+    padding: 5px 8px;
+    border: 1px solid #666;
+    border-radius: var(--control-radius);
+    background: #222;
+    color: var(--ink);
+    outline: none;
+}
+#archive-query:focus {
+    border-color: var(--accent);
+}
+#archive-search .switch {
+    flex-shrink: 0;
+}
+#archive-list {
+    flex: 1;
+    min-width: 0;
+    min-height: 0;
+    overflow: auto;
+    outline: none;
+    font-size: 15px;
+    user-select: none;
+}
+.archive-row {
+    padding: 4px 10px;
+    cursor: pointer;
+    white-space: nowrap;
+    width: max-content;
+    min-width: 100%;
+    box-sizing: border-box;
+}
+.archive-row.media {
+    color: var(--accent);
+}
+#archive-pane:focus-within .archive-row.selected {
+    background: var(--accent);
+    color: #111;
+}
+#archive-pane:not(:focus-within) .archive-row.selected {
+    outline: 1px solid var(--accent);
+    outline-offset: -1px;
+}
+#split {
+    flex: 0 0 6px;
+    cursor: col-resize;
+    background: var(--line);
+    touch-action: none;
+}
+#split:hover,
+body.splitting #split {
+    background: var(--accent);
+}
+body.splitting {
+    user-select: none;
+}
+#screen-slot {
+    display: flex;
+    flex: 1;
+    align-items: flex-start;
+    justify-content: center;
+    box-sizing: border-box;
+    min-width: 0;
+    min-height: 0;
+    padding: 2px;
+    outline: none;
+}
+#screen-slot:fullscreen,
+#screen-slot.screen-only {
+    width: 100%;
+    height: 100%;
+    padding: 0;
+    align-items: center;
+    justify-content: center;
+    background: var(--paper);
+}
+#screen {
+    display: block;
+    image-rendering: pixelated;
+    outline: none;
+}
+#screen:focus,
+#screen:focus-visible {
+    outline: 1px solid var(--accent);
+    outline-offset: 1px;
+}
+#screen-slot:fullscreen #screen:focus,
+#screen-slot:fullscreen #screen:focus-visible,
+#screen-slot.screen-only #screen:focus,
+#screen-slot.screen-only #screen:focus-visible {
+    outline: none;
+}
+#screen.crt {
+    image-rendering: auto;
+}
+#options {
+    flex-shrink: 0;
+    padding: 8px 14px;
+    border-bottom: 1px solid var(--line);
+}
+#status {
+    flex-shrink: 0;
+    padding: 10px 20px;
+    border-top: 1px solid var(--line);
+    font-size: 15px;
+}
+#keyboard {
+    display: flex;
+    flex-direction: column;
+    flex-shrink: 0;
+    gap: 6px;
+    padding: 10px 14px 14px;
+    border-top: 1px solid var(--line);
+}
+.keyboard-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    justify-content: center;
+}
+.keyboard-key {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    gap: 1px;
+    min-width: 2.6em;
+    min-height: 2.8em;
+    padding: 2px 4px;
+    font: inherit;
+    font-size: 12px;
+    line-height: 1.1;
+}
+.keyboard-key.wide {
+    min-width: 12em;
+}
+.keyboard-key .keyword {
+    color: var(--accent);
+    font-size: 9px;
+}
+.keyboard-key.on {
+    background: var(--accent);
+    color: #111;
+    border-color: var(--accent);
+}
+.keyboard-key.on .keyword {
+    color: #111;
+}
+@media (max-width: 700px) {
+    #workspace {
+        flex-direction: column;
+    }
+    #archive-pane {
+        flex: 0 0 30%;
+        width: auto;
+    }
+    #split {
+        cursor: row-resize;
+    }
+}
+</style>
+</head>
+<body>
+<div id="options" class="rowbox">
+    <button id="reset">Reset</button>
+    <label class="switch" title="Onscreen keyboard (F1)"><input id="keyboard-toggle" type="checkbox">Keyboard</label>
+    <label class="switch" title="CRT display filter"><input id="crt" type="checkbox" checked>CRT</label>
+    <label class="switch" title="Spread AY channels A/B/C across the stereo image; the hardware is mono"><input id="stereo" type="checkbox">Stereo</label>
+    <button id="fullscreen-toggle" title="Fullscreen (F11)">Fullscreen</button>
+    <label class="switch" title="Start selected tapes with the bundled TS2068 ROM loader"><input id="auto" type="checkbox" checked>Auto</label>
+    <label class="switch"><input id="turbo" type="checkbox" checked>Turbo</label>
+    <button id="play-tape" title="Start or resume tape playback" disabled>Play</button>
+    <div class="media-info"><span id="init-info">Initializing...</span></div>
+    <a id="tsrun-link" style="display: none">Open in TSRun</a>
+    <button id="download-file" style="display: none">Download</button>
+</div>
+<header id="page-header" class="rowbox">
+    <div class="path-clip"><span id="archive-path"><span id="archive-path-dir"></span><span id="archive-path-sep">/</span><span id="archive-path-file">&nbsp;</span></span></div>
+</header>
+<main id="workspace">
+    <div id="archive-pane">
+        <div id="archive-search" class="rowbox">
+            <input id="archive-query" type="text" spellcheck="false" autocomplete="off">
+            <label class="switch" title="Show only titles tagged for the TS 2068"><input id="ts2068" type="checkbox" checked>TS2068</label>
+        </div>
+        <div id="archive-list" tabindex="0"></div>
+    </div>
+    <div id="split"></div>
+    <div id="screen-slot">
+        <canvas id="screen" width="640" height="240" tabindex="0"></canvas>
+    </div>
+</main>
+<div id="status" class="rowbox">
+    <div class="media-info"><span id="sound-info"></span> <span id="tape-info">No tape</span></div>
+</div>
+<div id="keyboard" style="display: none"></div>
+<script type="module" src="archive.js"></script>
+</body>
+</html>

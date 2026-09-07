@@ -41,9 +41,6 @@ header {
     flex: 0;
     align-items: stretch;
 }
-.colbox-stretch {
-    flex: 1;
-}
 .rowbox {
     flex-direction: row;
     flex-wrap: wrap;
@@ -90,14 +87,32 @@ button:active,
     opacity: 0;
     pointer-events: none;
 }
+.media-row {
+    flex-wrap: nowrap;
+}
 .media-info {
-    flex: 1;
+    flex: 1 1 auto;
     min-width: 0;
+    overflow-wrap: break-word;
     color: var(--muted);
 }
-.media-info.error {
+.media-info.error,
+.media-info > .error {
     font-weight: 600;
     color: var(--accent);
+}
+.rom-load {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: row;
+    flex-wrap: nowrap;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+}
+#rom0-info,
+#rom1-info {
+    text-align: right;
 }
 #workspace {
     display: flex;
@@ -167,6 +182,11 @@ button:active,
 .keyboard-key.on .keyword {
     color: #111;
 }
+@media (max-width: 700px) {
+    .media-row {
+        flex-wrap: wrap;
+    }
+}
 </style>
 </head>
 <body>
@@ -178,35 +198,32 @@ button:active,
         <label class="switch" title="CRT display filter"><input id="crt" type="checkbox" checked>CRT</label>
         <label class="switch" title="Spread AY channels A/B/C across the stereo image; the hardware is mono"><input id="stereo" type="checkbox">Stereo</label>
         <button id="fullscreen-toggle" title="Fullscreen (F11)">Fullscreen</button>
-        <div id="top-info" class="media-info">Initializing...</div>
+        <div class="media-info"><span id="init-info">Initializing...</span> <span id="sound-info"></span> <span id="startup-file-info"></span></div>
+        <a href="archive.html">Archive browser</a>
         <a href="https://github.com/josef-jelinek/TSRun">GitHub repo</a>
     </div>
-    <div class="rowbox">
-        <div class="colbox colbox-stretch">
-            <div class="rowbox">
-                <button id="load-tape">Load TAP</button>
-                <input id="file-tape" type="file" accept=".tap" style="display: none">
-                <label class="switch"><input id="turbo" type="checkbox" checked>Turbo</label>
-                <div id="tape-info" class="media-info">No tape</div>
-            </div>
-            <div class="rowbox">
-                <button id="load-cart">Load DCK</button>
-                <input id="file-cart" type="file" accept=".dck" style="display: none">
-                <button id="eject-cart">Eject</button>
-                <div id="cart-info" class="media-info">No cartridge</div>
-            </div>
+    <div class="rowbox media-row">
+        <button id="load-tape">Load Tape</button>
+        <input id="file-tape" type="file" accept=".tap,.tzx" style="display: none">
+        <label class="switch" title="Start selected tapes with the bundled TS2068 ROM loader"><input id="auto" type="checkbox" checked>Auto</label>
+        <label class="switch"><input id="turbo" type="checkbox" checked>Turbo</label>
+        <button id="play-tape" title="Start or resume tape playback" disabled>Play</button>
+        <div id="tape-info" class="media-info">No tape</div>
+        <div class="rom-load">
+            <div id="rom0-info" class="media-info">No HOME ROM file</div>
+            <button id="load-rom0" title="Set HOME ROM">Load ROM0</button>
+            <input id="file-rom0" type="file" accept=".rom, .bin" style="display: none">
         </div>
-        <div class="colbox colbox-stretch">
-            <div class="rowbox">
-                <button id="load-rom0" title="Set HOME ROM">Load ROM0</button>
-                <input id="file-rom0" type="file" accept=".rom, .bin" style="display: none">
-                <div id="rom0-info" class="media-info">No HOME ROM file</div>
-            </div>
-            <div class="rowbox">
-                <button id="load-rom1" title="Set EXROM">Load ROM1</button>
-                <input id="file-rom1" type="file" accept=".rom, .bin" style="display: none">
-                <div id="rom1-info" class="media-info">No EXROM file</div>
-            </div>
+    </div>
+    <div class="rowbox media-row">
+        <button id="load-cart">Load Cart</button>
+        <input id="file-cart" type="file" accept=".dck" style="display: none">
+        <button id="eject-cart">Eject</button>
+        <div id="cart-info" class="media-info">No cartridge</div>
+        <div class="rom-load">
+            <div id="rom1-info" class="media-info">No EXROM file</div>
+            <button id="load-rom1" title="Set EXROM">Load ROM1</button>
+            <input id="file-rom1" type="file" accept=".rom, .bin" style="display: none">
         </div>
     </div>
 </header>

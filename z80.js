@@ -108,6 +108,7 @@ for (let i = 0; i < 256; i += 1) {
 /**
  * stepAdded holds the cycles a step already charged to tstates ahead of time,
  * so runZ80 can charge only the remainder once the step returns.
+ *
  * @typedef {{
  *   tstates: number,
  *   stepAdded: number,
@@ -128,6 +129,7 @@ export function resetZ80(cpu) {
 
 /**
  * clock.tstates advances after each instruction so IN FE sees a live EAR level.
+ *
  * @param {Z80} cpu
  * @param {Z80Bus} bus
  * @param {number} limit
@@ -185,6 +187,7 @@ export function irqZ80(cpu, bus) {
 
 /**
  * Accept NMI: store IFF1 in IFF2, clear IFF1, push PC, jump to 0x0066.
+ *
  * @param {Z80} cpu
  * @param {Z80Bus} bus
  * @returns {number}
@@ -205,6 +208,7 @@ export function nmiZ80(cpu, bus) {
 
 /**
  * Fetch one instruction, consume repeated IX/IY prefixes, then select its opcode map.
+ *
  * @param {Z80} cpu
  * @param {Z80Bus} bus
  * @param {Z80Clock} clock
@@ -238,6 +242,7 @@ function stepZ80(cpu, bus, clock) {
 /**
  * Decode the regular opcode map, with DD/FD substituting IX/IY for HL.
  * The Z80 table uses x=bits 7-6, y=bits 5-3, z=bits 2-0, p=y>>1, q=y&1.
+ *
  * @param {Z80} cpu
  * @param {Z80Bus} bus
  * @param {number} op
@@ -627,6 +632,7 @@ function stepMain(cpu, bus, op, prefix, clock) {
  * Decode CB and DD/FD-CB bit operations.
  * x=0 rotates/shifts, x=1 tests, x=2 resets, and x=3 sets bit y in operand z.
  * Indexed forms always use (IX/IY+d), then copy non-BIT results to z when z!=6.
+ *
  * @param {Z80} cpu
  * @param {Z80Bus} bus
  * @param {number} prefix
@@ -696,6 +702,7 @@ function stepCB(cpu, bus, prefix) {
  * Decode ED extended operations.
  * x=1 contains I/O, 16-bit arithmetic/load, NEG, RETN/RETI, IM, and special registers.
  * x=2 with y>=4 contains the LDI/CPI/INI/OUTI block families; other encodings are NOPs.
+ *
  * @param {Z80} cpu
  * @param {Z80Bus} bus
  * @param {Z80Clock} clock
@@ -1120,6 +1127,7 @@ function rotateCB(cpu, y, val) {
  * Approximation: this CPU keeps no MEMPTR/WZ register, so BIT n,(HL) takes the
  * undocumented bits 5/3 from the operand instead of from WZ. The indexed
  * DD/FD CB form is exact, as its caller supplies the address high byte.
+ *
  * @param {Z80} cpu
  * @param {number} y
  * @param {number} val
@@ -1227,6 +1235,7 @@ function blockCp(cpu, bus, y) {
  * Approximation: only the S/Z/5/3/P flags from B are produced. The hardware
  * also derives H, C, and N from the transferred byte plus (C +/- 1); no known
  * software depends on those, so the cheaper form is kept.
+ *
  * @param {Z80} cpu
  * @param {Z80Bus} bus
  * @param {number} y
@@ -1548,6 +1557,7 @@ function pop16(cpu, bus) {
  * Charge the M-cycles that run before a bus I/O access, so the machine sees the
  * port at the T-state it really happens instead of at the end of the
  * instruction. runZ80 charges the remainder once the step returns.
+ *
  * @param {Z80Clock} clock
  * @param {number} cycles
  */

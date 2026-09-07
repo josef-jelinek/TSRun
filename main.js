@@ -4,7 +4,10 @@ import {
     createMachine,
     resetMachine,
     runFrame,
-    insertTap,
+    insertTape,
+    ejectTape,
+    autoloadTape,
+    playTape,
     insertDock,
     ejectDock,
     requestNmi,
@@ -15,15 +18,25 @@ import {
 } from "./machine.js";
 
 import {httpGet, readFile} from "./io.js";
+import {unpackedMemberUrl} from "./tsarchive.js";
+
+import {
+    applySwitchParamValue,
+    homeRomSize,
+    exRomSize,
+    loadShaders,
+    loadStartupRoms,
+    showError,
+    showInfo,
+} from "./boot.js";
+
+import {isHiddenName, isZipName, isTapeName, isCartName, maxMediaSize, maxZipSize} from "./media.js";
+
+import {listZip, readZipEntry} from "./zip.js";
 
 import {initJoysticks, pollJoysticks} from "./joystick.js";
 
-import {
-    initKeyboard,
-    handleKeyDown,
-    handleKeyUp,
-    handleBlur,
-} from "./keyboard.js";
+import {initKeyboard, handleKeyDown, handleKeyUp, handleBlur} from "./keyboard.js";
 
 import {
     initSound,
@@ -39,89 +52,94 @@ const soundSampleHz = 44100;
 // The SCLD frame is 262 lines of 224 T-states, so the machine runs at
 // 3528000 / 58688 Hz. Duplicated from machine.js, as the frame sizes are.
 const framesPerSecond = 3528000 / 58688;
-const frameMs = 1000 / framesPerSecond;
-const turboFrames = 100;
-
-const homeRomSize = 16384;
-const exRomSize = 8192;
+const frameMs         = 1000 / framesPerSecond;
+const turboFrames     = 100;
 
 const ui = {
-    pageHeader: /** @type {HTMLElement} */ (document.getElementById("page-header")),
-    topInfo: /** @type {HTMLElement} */ (document.getElementById("top-info")),
-    loadTape: /** @type {HTMLButtonElement} */ (document.getElementById("load-tape")),
-    fileTape: /** @type {HTMLInputElement} */ (document.getElementById("file-tape")),
-    tapeInfo: /** @type {HTMLElement} */ (document.getElementById("tape-info")),
-    loadCart: /** @type {HTMLButtonElement} */ (document.getElementById("load-cart")),
-    fileCart: /** @type {HTMLInputElement} */ (document.getElementById("file-cart")),
-    ejectCart: /** @type {HTMLButtonElement} */ (document.getElementById("eject-cart")),
-    cartInfo: /** @type {HTMLElement} */ (document.getElementById("cart-info")),
-    loadRom0: /** @type {HTMLButtonElement} */ (document.getElementById("load-rom0")),
-    fileRom0: /** @type {HTMLInputElement} */ (document.getElementById("file-rom0")),
-    rom0Info: /** @type {HTMLElement} */ (document.getElementById("rom0-info")),
-    loadRom1: /** @type {HTMLButtonElement} */ (document.getElementById("load-rom1")),
-    fileRom1: /** @type {HTMLInputElement} */ (document.getElementById("file-rom1")),
-    rom1Info: /** @type {HTMLElement} */ (document.getElementById("rom1-info")),
-    reset: /** @type {HTMLButtonElement} */ (document.getElementById("reset")),
-    nmi: /** @type {HTMLButtonElement} */ (document.getElementById("nmi")),
-    screen: /** @type {HTMLCanvasElement} */ (document.getElementById("screen")),
-    keyboard: /** @type {HTMLElement} */ (document.getElementById("keyboard")),
-    keyboardToggle: /** @type {HTMLInputElement} */ (document.getElementById("keyboard-toggle")),
-    crt: /** @type {HTMLInputElement} */ (document.getElementById("crt")),
-    stereo: /** @type {HTMLInputElement} */ (document.getElementById("stereo")),
+    pageHeader:       /** @type {HTMLElement} */       (document.getElementById("page-header")),
+    initInfo:         /** @type {HTMLElement} */       (document.getElementById("init-info")),
+    soundInfo:        /** @type {HTMLElement} */       (document.getElementById("sound-info")),
+    startupFileInfo:  /** @type {HTMLElement} */       (document.getElementById("startup-file-info")),
+    loadTape:         /** @type {HTMLButtonElement} */ (document.getElementById("load-tape")),
+    fileTape:         /** @type {HTMLInputElement} */  (document.getElementById("file-tape")),
+    auto:             /** @type {HTMLInputElement} */  (document.getElementById("auto")),
+    playTape:         /** @type {HTMLButtonElement} */ (document.getElementById("play-tape")),
+    tapeInfo:         /** @type {HTMLElement} */       (document.getElementById("tape-info")),
+    loadCart:         /** @type {HTMLButtonElement} */ (document.getElementById("load-cart")),
+    fileCart:         /** @type {HTMLInputElement} */  (document.getElementById("file-cart")),
+    ejectCart:        /** @type {HTMLButtonElement} */ (document.getElementById("eject-cart")),
+    cartInfo:         /** @type {HTMLElement} */       (document.getElementById("cart-info")),
+    loadRom0:         /** @type {HTMLButtonElement} */ (document.getElementById("load-rom0")),
+    fileRom0:         /** @type {HTMLInputElement} */  (document.getElementById("file-rom0")),
+    rom0Info:         /** @type {HTMLElement} */       (document.getElementById("rom0-info")),
+    loadRom1:         /** @type {HTMLButtonElement} */ (document.getElementById("load-rom1")),
+    fileRom1:         /** @type {HTMLInputElement} */  (document.getElementById("file-rom1")),
+    rom1Info:         /** @type {HTMLElement} */       (document.getElementById("rom1-info")),
+    reset:            /** @type {HTMLButtonElement} */ (document.getElementById("reset")),
+    nmi:              /** @type {HTMLButtonElement} */ (document.getElementById("nmi")),
+    screenSlot:       /** @type {HTMLElement} */       (document.getElementById("screen-slot")),
+    screen:           /** @type {HTMLCanvasElement} */ (document.getElementById("screen")),
+    keyboard:         /** @type {HTMLElement} */       (document.getElementById("keyboard")),
+    keyboardToggle:   /** @type {HTMLInputElement} */  (document.getElementById("keyboard-toggle")),
+    crt:              /** @type {HTMLInputElement} */  (document.getElementById("crt")),
+    stereo:           /** @type {HTMLInputElement} */  (document.getElementById("stereo")),
     fullscreenToggle: /** @type {HTMLButtonElement} */ (document.getElementById("fullscreen-toggle")),
-    turbo: /** @type {HTMLInputElement} */ (document.getElementById("turbo")),
+    turbo:            /** @type {HTMLInputElement} */  (document.getElementById("turbo")),
 };
 
+const query = new URLSearchParams(window.location.search);
+
 const keyMatrix = new Uint8Array(8);
-const joystick = new Uint8Array(2);
+const joystick  = new Uint8Array(2);
+
 initJoysticks(joystick);
 
 /**
- * @typedef {{
- *   name: string,
- *   bytes: ArrayBuffer,
- * }} MediaFile
- */
-
-/**
  * @type {{
- *   machine: import("./machine.js").Machine,
- *   kbd: import("./keyboard.js").Keyboard,
- *   gfx: import("./screen.js").Gfx | null,
- *   gfxErr: string | null,
- *   sfx: import("./sound.js").Sfx | null,
- *   sfxErr: string | null,
- *   cartInserted: boolean,
- *   ready: boolean,
- *   frameId: number | undefined,
- *   lastNow: number,
- *   carryMs: number,
- *   romFetchPending: number,
- *   keyboardShown: boolean,
- *   screenOnly: boolean,
- *   userRomOverride: boolean[],
- *   screenOnlyFallback: boolean,
+ *   machine:              import("./machine.js").Machine,
+ *   kbd:                  import("./keyboard.js").Keyboard,
+ *   gfx:                  import("./screen.js").Gfx | null,
+ *   sfx:                  import("./sound.js").Sfx | null,
+ *   tapeName:             string,
+ *   tapeState:            "empty" | "ready" | "playing" | "blocked" | "done",
+ *   frameId:              number | undefined,
+ *   lastNow:              number,
+ *   carryMs:              number,
+ *   keyboardVisible:      boolean,
+ *   screenOnly:           boolean,
+ *   abortLoadRoms:        (function(): void) | null,
+ *   abortLoadStartupFile: (function(): void) | null,
+ *   startupFileName:      string | null,
+ *   startupFileBytes:     ArrayBuffer | null,
+ *   screenOnlyFallback:   boolean,
  * }}
  */
 const env = {
-    machine: createMachine(keyMatrix, joystick),
-    kbd: initKeyboard(ui.keyboard, keyMatrix),
-    gfx: null,
-    gfxErr: null,
-    sfx: null,
-    sfxErr: null,
-    cartInserted: false,
-    ready: false,
-    frameId: undefined,
-    lastNow: 0,
-    carryMs: 0,
-    romFetchPending: 0,
-    keyboardShown: false,
-    screenOnly: false,
-    // If user selected ROM file, prevent slow-fetched default ROM to override it.
-    userRomOverride: [false, false],
-    screenOnlyFallback: false,
+    machine:              createMachine(keyMatrix, joystick),
+    kbd:                  initKeyboard(ui.keyboard, keyMatrix),
+    gfx:                  null,
+    sfx:                  null,
+    tapeName:             "",
+    tapeState:            "empty",
+    frameId:              undefined,
+    lastNow:              0,
+    carryMs:              0,
+    keyboardVisible:      false,
+    screenOnly:           false,
+    abortLoadRoms:        null,
+    abortLoadStartupFile: null,
+    startupFileName:      null,
+    startupFileBytes:     null,
+    screenOnlyFallback:   false,
 };
+
+applySwitchParamValue(ui.keyboardToggle, query.get("keyboard") ?? "");
+applySwitchParamValue(ui.crt, query.get("crt") ?? "");
+applySwitchParamValue(ui.stereo, query.get("stereo") ?? "");
+applySwitchParamValue(ui.auto, query.get("auto") ?? "");
+applySwitchParamValue(ui.turbo, query.get("turbo") ?? "");
+
+setKeyboardVisibility(ui.keyboardToggle.checked);
 
 ui.loadTape.onclick = function () {
     ui.fileTape.click();
@@ -133,17 +151,37 @@ ui.fileTape.onchange = function () {
     if (file === undefined) {
         return;
     }
+    if (env.abortLoadStartupFile !== null) {
+        env.abortLoadStartupFile();
+        env.abortLoadStartupFile = null;
+    }
+    env.startupFileName = null;
+    env.startupFileBytes = null;
+    ejectTape(env.machine);
+    env.tapeName = "";
+    refreshTapeStatus(null);
+    // Triggering multiple concurrent file reads is too unlikely to guard against.
     readFile(file, "arraybuffer", function (err, buf) {
         if (err !== null) {
-            setStatus(ui.tapeInfo, err, true);
+            refreshTapeStatus(err);
             return;
         }
-        const tap = {
-            name: file.name,
-            bytes: buf,
-        };
-        applyTap(tap);
+        const tapeErr = insertTape(env.machine, buf);
+        if (tapeErr !== null) {
+            refreshTapeStatus(tapeErr);
+            return;
+        }
+        env.tapeName = file.name;
+        refreshTapeStatus(null);
+        showInfo(ui.startupFileInfo, "");
+        if (ui.auto.checked && autoloadTape(env.machine) && env.sfx !== null) {
+            resetSound(env.sfx);
+        }
     });
+};
+
+ui.playTape.onclick = function () {
+    playTape(env.machine);
 };
 
 ui.loadCart.onclick = function () {
@@ -156,23 +194,34 @@ ui.fileCart.onchange = function () {
     if (file === undefined) {
         return;
     }
+    if (env.abortLoadStartupFile !== null) {
+        env.abortLoadStartupFile();
+        env.abortLoadStartupFile = null;
+    }
+    env.startupFileName = null;
+    env.startupFileBytes = null;
+    ejectDock(env.machine);
+    // Triggering multiple concurrent file reads is too unlikely to guard against.
     readFile(file, "arraybuffer", function (err, buf) {
         if (err !== null) {
-            setStatus(ui.cartInfo, err, true);
+            showError(ui.cartInfo, err);
             return;
         }
-        const cart = {
-            name: file.name,
-            bytes: buf,
-        };
-        if (applyCart(cart)) {
-            env.cartInserted = true;
+        const dockErr = insertDock(env.machine, buf);
+        if (dockErr !== null) {
+            showError(ui.cartInfo, dockErr);
+            return;
         }
+        resetSystem();
+        showInfo(ui.cartInfo, file.name + ": " + cartSummary(env.machine));
+        showInfo(ui.startupFileInfo, "");
     });
 };
 
 ui.ejectCart.onclick = function () {
-    handleEject();
+    ejectDock(env.machine);
+    resetSystem();
+    showInfo(ui.cartInfo, "No cartridge.");
 };
 
 ui.loadRom0.onclick = function () {
@@ -200,7 +249,7 @@ ui.nmi.onclick = function () {
 };
 
 ui.keyboardToggle.onchange = function () {
-    setKeyboardShown(ui.keyboardToggle.checked);
+    setKeyboardVisibility(ui.keyboardToggle.checked);
 };
 
 ui.crt.onchange = function () {
@@ -219,24 +268,24 @@ ui.fullscreenToggle.onclick = function () {
     toggleCanvasFullscreen();
 };
 
-window.onresize = function () {
+new ResizeObserver(function () {
     if (env.gfx !== null) {
         resizeScreen(env.gfx);
     }
-};
+}).observe(ui.screenSlot);
 
 document.onfullscreenchange = function () {
-    syncScreenOnly();
+    setScreenOnly(document.fullscreenElement !== null || env.screenOnlyFallback);
 };
 
 window.onkeydown = function (e) {
     if (env.sfx !== null) {
-        resumeSound(env.sfx); // needs a user interaction to not be suspended
+        resumeSound(env.sfx); // needs a user interaction to activate
     }
     if (e.code === "F1") {
         e.preventDefault();
         if (!e.repeat) {
-            toggleKeyboard();
+            setKeyboardVisibility(!env.keyboardVisible);
         }
         return;
     }
@@ -252,12 +301,12 @@ window.onkeydown = function (e) {
 
 window.onpointerdown = function () {
     if (env.sfx !== null) {
-        resumeSound(env.sfx); // needs a user interaction to not be suspended
+        resumeSound(env.sfx); // needs a user interaction to activate
     }
 };
 
 window.onkeyup = function (e) {
-    if (e.code === "F1") {
+    if (e.code === "F1" || e.code === "F11") {
         e.preventDefault();
         return;
     }
@@ -268,79 +317,311 @@ window.onblur = function () {
     handleBlur(env.kbd);
 };
 
-loadRoms();
-loadShaders(function (err, shaders) {
-    if (err !== null || shaders === null) {
-        handleGfx(err, null);
-        return;
-    }
-    initScreen(ui.screen, shaders, handleGfx);
-});
-initSound(soundSampleHz, handleSfx);
-startAnimationLoop();
-
-function loadRoms() {
-    let name = new URLSearchParams(window.location.search).get("rom");
-    if (name === null || name === "") {
-        name = "ts2068";
-    }
-    if (!/^[A-Za-z0-9]+$/.test(name)) {
-        setStatus(ui.rom0Info, "Invalid rom parameter name.", true);
-        setStatus(ui.rom1Info, "Invalid rom parameter name.", true);
-        return;
-    }
-
-    env.romFetchPending = 2;
-    getRom(0, "roms/" + name + "-0.rom", homeRomSize, ui.rom0Info);
-    getRom(1, "roms/" + name + "-1.rom", exRomSize, ui.rom1Info);
-}
-
-/**
- * @param {number} slot
- * @param {string} url
- * @param {number} byteLength
- * @param {HTMLElement} infoEl
- */
-function getRom(slot, url, byteLength, infoEl) {
-    httpGet(url, "arraybuffer", function (err, buf) {
-        storeFetchedRom(slot, url, byteLength, infoEl, err, buf);
-        // Both slots are fetched in parallel; reset once, so the CPU never
-        // starts on a half-loaded pair.
-        env.romFetchPending -= 1;
-        if (env.romFetchPending === 0) {
-            resetSystem();
+// In order to initialize the screen renderer, we need GPU shader sources first.
+loadShaders(
+    function (err, shaders) {
+        if (err !== null) {
+            showError(ui.initInfo, err);
+            return;
         }
-    });
+        if (shaders === null) {
+            showError(ui.initInfo, "No shaders.");
+            return;
+        }
+        initScreen(
+            ui.screen,
+            shaders,
+            function (err, gfx) { // can be called multiple times on context loss / refresh
+                env.gfx = gfx;
+                if (err !== null) {
+                    showError(ui.initInfo, err);
+                    return;
+                }
+                if (gfx === null) {
+                    showError(ui.initInfo, "No graphics context.");
+                    return;
+                }
+                setCrt(gfx, ui.crt.checked);
+                showInfo(ui.initInfo, "Ready.");
+            },
+        );
+    },
+);
+
+initSound(
+    soundSampleHz,
+    function (err, sfx) {
+        if (err !== null) {
+            showError(ui.soundInfo, "No sound: " + err);
+            return;
+        }
+        if (sfx === null) {
+            showError(ui.soundInfo, "No sound.");
+            return;
+        }
+        env.sfx = sfx;
+        setSoundStereo(sfx, ui.stereo.checked);
+        setSoundRate(env.machine, sfx.context.sampleRate);
+        enableSound(env.machine, true);
+    },
+);
+
+env.abortLoadRoms = loadStartupRoms(
+    query.get("rom") ?? "",
+    function (errs, names, roms) {
+        env.abortLoadRoms = null;
+        if (errs !== null) {
+            showError(ui.rom0Info, errs[0]);
+            showError(ui.rom1Info, errs[1]);
+            return;
+        }
+        if (names !== null) {
+            showInfo(ui.rom0Info, names[0]);
+            showInfo(ui.rom1Info, names[1]);
+        }
+        if (roms !== null) {
+            env.machine.homeRom.set(new Uint8Array(roms[0]));
+            env.machine.exRom.set(new Uint8Array(roms[1]));
+        }
+        resetSystem();
+        if (env.startupFileName !== null && env.startupFileBytes !== null) {
+            applyStartupFile(env.startupFileName, env.startupFileBytes);
+        }
+    },
+);
+
+const startupFileUrl = query.get("url") ?? "";
+if (startupFileUrl !== "") {
+    env.abortLoadStartupFile = loadStartupFile(
+        startupFileUrl,
+        function (err, name, bytes) {
+            env.abortLoadStartupFile = null;
+            if (err !== null) {
+                showError(ui.startupFileInfo, err);
+                return;
+            }
+            if (env.abortLoadRoms === null && name !== null && bytes !== null) {
+                applyStartupFile(name, bytes);
+                return;
+            }
+            // remember the file data until roms are ready
+            env.startupFileName = name;
+            env.startupFileBytes = bytes
+        },
+    );
+}
+
+env.frameId = requestAnimationFrame(onFrame);
+
+/**
+ * @param {string} urlParam
+ * @param {function(string | null, string | null, ArrayBuffer | null): void} onDone
+ * @returns {(function(): void) | null} abort
+ */
+function loadStartupFile(urlParam, onDone) {
+    /** @type {URL | null} */
+    let url = null;
+    try {
+        url = new URL(urlParam, window.location.href);
+    } catch {
+        onDone("Invalid startup file URL.", null, null);
+        return null; // synchronous onDone, no abort
+    }
+    if (url.protocol !== "http:" && url.protocol !== "https:") {
+        onDone("A startup file protocol must be http(s).", null, null);
+        return null; // synchronous onDone, no abort
+    }
+    const zip = isZipName(url.pathname);
+    if (!zip && !isTapeName(url.pathname) && !isCartName(url.pathname)) {
+        onDone("Unsupported startup file type: " + url.pathname + ".", null, null);
+        return null; // synchronous onDone, no abort
+    }
+    // Serializing a URL escapes a space and everything non-ASCII, so the
+    // fragment read back here is encoded again whatever the parameter held, and
+    // what a ZIP calls the entry has to be decoded out of it. A name carrying a
+    // literal percent is not encoded at all and decoding it throws, so it
+    // stands as written.
+    let member = url.hash.slice(1);
+    try {
+        member = decodeURIComponent(member);
+    } catch {
+        // Not percent-encoded after all.
+    }
+    let name = url.pathname.slice(url.pathname.lastIndexOf("/") + 1);
+    let maxBytes = maxMediaSize;
+    let loadZip = zip;
+    // The fragment is not sent; fetch the ZIP path, or the unpacked member
+    // when this is an archive.org ZIP that cannot be read cross-origin.
+    let requestUrl = url.origin + url.pathname + url.search;
+    const unpacked = unpackedMemberUrl(url, member);
+    if (unpacked !== null) {
+        if (!isTapeName(member) && !isCartName(member)) {
+            onDone("ZIP entry " + member + " is not a TAP, TZX, or DCK.", null, null);
+            return null; // synchronous onDone, no abort
+        }
+        requestUrl = unpacked;
+        loadZip = false;
+        name = member;
+    } else if (zip) {
+        maxBytes = maxZipSize;
+    }
+    let done = false; // mostly to prevent non-abortable unzip to trigger post-abort callback
+    const abort = httpGet(
+        requestUrl,
+        "arraybuffer",
+        maxBytes,
+        function (err, buf) {
+            if (done) {
+                return;
+            }
+            if (err !== null) {
+                done = true;
+                onDone(err, null, null);
+                return;
+            }
+            if (!(buf instanceof ArrayBuffer)) {
+                done = true;
+                onDone("Could not load " + requestUrl + ": empty response.", null, null);
+                return;
+            }
+            if (!loadZip) {
+                done = true;
+                onDone(null, name, buf);
+                return;
+            }
+            extractFromZip(
+                member,
+                buf,
+                function (err, name, bytes) {
+                    if (done) {
+                        return;
+                    }
+                    done = true;
+                    onDone(err, name, bytes);
+                },
+            );
+        },
+    );
+    
+    if (abort === null) {
+        return null; // synchronous onDone, no abort
+    }
+    
+    return function() {
+        if (done) {
+            return;
+        }
+        done = true;
+        abort();
+        onDone("Aborted.", null, null);
+    };
 }
 
 /**
- * Store one fetched ROM image, or report why it was skipped.
- * @param {number} slot
- * @param {string} url
- * @param {number} byteLength
- * @param {HTMLElement} infoEl
- * @param {string | null} err
- * @param {*} buf
+ * Select and extract one loadable file from a ZIP bytes.
+ *
+ * @param {string} member
+ * @param {ArrayBuffer} bytes
+ * @param {function(string | null, string | null, ArrayBuffer | null): void} onDone
  */
-function storeFetchedRom(slot, url, byteLength, infoEl, err, buf) {
-    if (env.userRomOverride[slot]) {
+function extractFromZip(member, bytes, onDone) {
+    const listing = listZip(bytes);
+    if (listing.err !== null) {
+        onDone(listing.err, null, null);
         return;
     }
-    if (err !== null) {
-        setStatus(infoEl, err, true);
+
+    let selected = null;
+    if (member !== "") {
+        for (const entry of listing.entries) {
+            if (entry.name === member) {
+                selected = entry;
+                break;
+            }
+        }
+        if (selected === null) {
+            onDone("ZIP entry " + member + " does not exist.", null, null);
+            return;
+        }
+        if (!isTapeName(selected.name) && !isCartName(selected.name)) {
+            onDone("ZIP entry " + selected.name + " is not a TAP, TZX, or DCK.", null, null);
+            return;
+        }
+        if (selected.size > maxMediaSize) {
+            onDone("ZIP entry " + selected.name + " is too large to load.", null, null);
+            return;
+        }
+    } else {
+        const usable = [];
+        for (const entry of listing.entries) {
+            const supported = isTapeName(entry.name) || isCartName(entry.name);
+            const readable = entry.method === 0 || entry.method === 8 && typeof DecompressionStream !== "undefined";
+            if (!isHiddenName(entry.name) && supported && !entry.encrypted && readable && entry.size <= maxMediaSize) {
+                usable.push(entry);
+            }
+        }
+        if (usable.length === 0) {
+            onDone("ZIP file has no usable TAP, TZX, or DCK entries.", null, null);
+            return;
+        }
+        selected = usable[0];
+        for (const s of usable) {
+            if (s.name < selected.name) {
+                selected = s;
+            }
+        }
+    }
+
+    readZipEntry(
+        bytes,
+        selected,
+        function (err, buf) {
+            if (err !== null) {
+                onDone(err, null, null);
+                return;
+            }
+            if (!(buf instanceof ArrayBuffer)) {
+                onDone("Could not extract ZIP entry " + selected.name + ".", null, null);
+                return;
+            }
+            onDone(null, selected.name, buf);
+        },
+    );
+}
+
+/**
+ * Dispatch fetched startup bytes through the same paths as locally selected
+ * media, including their parsing, status, reset, and tape autoload behavior.
+ *
+ * @param {string} name
+ * @param {ArrayBuffer} bytes
+ */
+function applyStartupFile(name, bytes) {
+    if (isTapeName(name)) {
+        const tapeErr = insertTape(env.machine, bytes);
+        if (tapeErr !== null) {
+            env.tapeName = "";
+            refreshTapeStatus(tapeErr);
+            return;
+        }
+        env.tapeName = name;
+        refreshTapeStatus(null);
+        if (ui.auto.checked && autoloadTape(env.machine) && env.sfx !== null) {
+            resetSound(env.sfx);
+        }
         return;
     }
-    if (!(buf instanceof ArrayBuffer) || buf.byteLength !== byteLength) {
-        const s = "Expected " + byteLength + ", got " + buf.byteLength + " bytes.";
-        setStatus(infoEl, "Could not load \"" + url + "\": " + s, true);
+    if (isCartName(name)) {
+        const dockErr = insertDock(env.machine, bytes);
+        if (dockErr !== null) {
+            showError(ui.cartInfo, dockErr);
+            return;
+        }
+        resetSystem();
+        showInfo(ui.cartInfo, name + ": " + cartSummary(env.machine));
         return;
     }
-    const slash = url.lastIndexOf("/");
-    let name = url;
-    if (slash >= 0) {
-        name = url.slice(slash + 1);
-    }
-    applyRom(slot, name, new Uint8Array(buf), infoEl);
+    showError(ui.startupFileInfo, "Unsupported startup file type: " + name + ".");
 }
 
 /**
@@ -350,6 +631,10 @@ function storeFetchedRom(slot, url, byteLength, infoEl, err, buf) {
  * @param {HTMLElement} infoEl
  */
 function pickRom(slot, input, byteLength, infoEl) {
+    if (env.abortLoadRoms !== null) {
+        env.abortLoadRoms();
+        env.abortLoadRoms = null;
+    }
     const file = input.files?.[0];
     input.value = "";
     if (file === undefined) {
@@ -357,127 +642,26 @@ function pickRom(slot, input, byteLength, infoEl) {
     }
     readFile(file, "arraybuffer", function (err, buf) {
         if (err !== null) {
-            setStatus(infoEl, err, true);
+            showError(infoEl, err);
             return;
         }
         if (!(buf instanceof ArrayBuffer) || buf.byteLength !== byteLength) {
-            setStatus(infoEl, "Expected " + byteLength + ", got " + buf.byteLength + " bytes.", true);
+            showError(infoEl, "Expected " + byteLength + ", got " + buf.byteLength + " bytes.");
             return;
         }
-        env.userRomOverride[slot] = true;
-        applyRom(slot, file.name, new Uint8Array(buf), infoEl);
-        resetSystem();
-    });
-}
-
-/**
- * @param {number} slot
- * @param {string} name
- * @param {Uint8Array} bytes
- * @param {HTMLElement} infoEl
- */
-function applyRom(slot, name, bytes, infoEl) {
-    if (slot === 0) {
-        env.machine.homeRom.set(bytes);
-    } else {
-        env.machine.exRom.set(bytes);
-    }
-    setStatus(infoEl, name, false);
-}
-
-/**
- * @param {function(string | null, import("./screen.js").Shaders | null): void} onDone
- */
-function loadShaders(onDone) {
-    const shaders = ["", ""];
-    let failed = false;
-    getShader(0, "screen.vert.glsl");
-    getShader(1, "screen.frag.glsl");
-
-    /**
-     * @param {number} slot
-     * @param {string} url
-     */
-    function getShader(slot, url) {
-        httpGet(url, "text", function (err, text) {
-            if (failed) {
-                return;
-            }
-            if (err !== null || typeof text !== "string" || text === "") {
-                failed = true;
-                onDone("Failed to load \"" + url + "\"", null);
-                return;
-            }
-            shaders[slot] = text;
-            if (shaders[0] !== "" && shaders[1] !== "") {
-                onDone(null, {vert: shaders[0], frag: shaders[1]});
-            }
-        });
-    }
-}
-
-/**
- * @param {string | null} err
- * @param {import("./screen.js").Gfx | null} gfx
- */
-function handleGfx(err, gfx) {
-    env.gfx = gfx;
-    env.gfxErr = err;
-    checkEnv();
-}
-
-/**
- * @param {string | null} err
- * @param {import("./sound.js").Sfx | null} sfx
- */
-function handleSfx(err, sfx) {
-    env.sfx = sfx;
-    env.sfxErr = err;
-    checkEnv();
-}
-
-function checkEnv() {
-    if (env.gfxErr !== null) {
-        setStatus(ui.topInfo, env.gfxErr, true);
-        return;
-    }
-    if (env.gfx === null) {
-        return; // gfx are still being initialized
-    }
-    if (env.sfx === null && env.sfxErr === null) {
-        return; // sfx still being initialized
-    }
-    if (!env.ready) {
-        // Setup machine and sound only once.
-        if (env.sfx !== null) {
-            setSoundStereo(env.sfx, ui.stereo.checked);
-            setSoundRate(env.machine, env.sfx.context.sampleRate);
-            enableSound(env.machine, true);
+        if (slot === 0) {
+            env.machine.homeRom.set(new Uint8Array(buf));
+        } else {
+            env.machine.exRom.set(new Uint8Array(buf));
         }
-        env.ready = true;
-    }
-    // Graphics context can be reinitialized multiple times.
-    setCrt(env.gfx, ui.crt.checked);
-    if (env.sfxErr !== null) {
-        setStatus(ui.topInfo, "Ready. No sound: " + env.sfxErr, true);
-        return;
-    }
-    setStatus(ui.topInfo, "Ready.", false);
-}
-
-function startAnimationLoop() {
-    if (env.frameId !== undefined) {
-        return;
-    }
-    env.frameId = requestAnimationFrame(onFrame);
+        resetSystem();
+        showInfo(infoEl, file.name);
+    });
 }
 
 /** @param {number} now */
 function onFrame(now) {
     env.frameId = requestAnimationFrame(onFrame);
-    if (env.gfx === null) {
-        return;
-    }
     pollJoysticks(joystick);
     if (env.lastNow === 0) {
         env.lastNow = now;
@@ -496,24 +680,34 @@ function onFrame(now) {
         env.carryMs -= frameMs;
         ran += 1;
     }
-    if (turboEnabled && turboloading()) {
-        while (turboEnabled && ran < turboFrames && turboloading()) {
+    if (turboEnabled && env.machine.tape.state === "playing") {
+        while (turboEnabled && ran < turboFrames && env.machine.tape.state === "playing") {
             stepMachine(turboEnabled);
             ran += 1;
         }
-        stepMachine(false); // one full frame so screen and sound catch up
-    } else if (env.sfx !== null && soundIsRunning(env.sfx) && !soundQueueReady(env.sfx) && ran < 4) {
+        // One painted frame is mixed so loader tones are heard. Drop the
+        // worklet queue first, and force a sound resync, or a behind sample
+        // clock dumps many frames of EAR that then repeat.
+        if (env.sfx !== null) {
+            resetSound(env.sfx);
+        }
+        enableSound(env.machine, false);
+        stepMachine(false);
+    } else if (ran < 4 && env.sfx !== null && soundIsRunning(env.sfx) && !soundQueueReady(env.sfx)) {
         stepMachine(turboEnabled);
         env.carryMs = Math.max(env.carryMs, 0) - frameMs;
     }
-    drawScreen(env.gfx, env.machine.pixels);
+    refreshTapeStatus(null);
+    if (env.gfx !== null) {
+        drawScreen(env.gfx, env.machine.pixels);
+    }
 }
 
 /** @param {boolean} turboEnabled */
 function stepMachine(turboEnabled) {
     // A turbo frame is thrown away, so it runs with no raster painting and no
     // sound synthesis. Only the frame after the burst is drawn and heard.
-    const turbo = turboEnabled && turboloading();
+    const turbo = turboEnabled && env.machine.tape.state === "playing";
     setVideoOn(env.machine, !turbo);
     enableSound(env.machine, !turbo && env.sfx !== null);
     runFrame(env.machine);
@@ -521,99 +715,85 @@ function stepMachine(turboEnabled) {
     if (turbo) {
         return;
     }
-    if (env.sfx !== null && chunk.n > 0 && (soundIsRunning(env.sfx) || !soundQueueReady(env.sfx))) {
+    if (chunk.n > 0 && env.sfx !== null && (soundIsRunning(env.sfx) || !soundQueueReady(env.sfx))) {
         pushSound(env.sfx, chunk);
     }
 }
 
 /**
- * @returns {boolean}
+ * Report what the tape transport is doing. This runs every frame, so it only
+ * touches the page when something it shows actually changes. A load error
+ * stands until the next tape is chosen. A failed insert still ejects the
+ * previous tape, so Play stays disabled.
+ *
+ * @param {string | null} err
  */
-function turboloading() {
-    const tape = env.machine.tape;
-    return tape.playing && !tape.waiting;
+function refreshTapeStatus(err) {
+    if (err !== null) {
+        env.tapeState = env.machine.tape.state;
+        showError(ui.tapeInfo, err);
+        ui.playTape.textContent = "Play";
+        ui.playTape.disabled = true;
+        return;
+    }
+    if (env.tapeState === env.machine.tape.state) {
+        return;
+    }
+    env.tapeState = env.machine.tape.state;
+    switch (env.tapeState) {
+    case "empty":
+        showInfo(ui.tapeInfo, "No tape");
+        ui.playTape.textContent = "Play";
+        ui.playTape.disabled = true;
+        break;
+    case "ready":
+        const blockCount = env.machine.tape.blockCount + " blocks.";
+        const playMessage = "Enter LOAD \"\" or press Play.";
+        showInfo(ui.tapeInfo, env.tapeName + ": " + blockCount + " " + playMessage);
+        ui.playTape.textContent = "Play";
+        ui.playTape.disabled = false;
+        break;
+    case "playing":
+        showInfo(ui.tapeInfo, env.tapeName + ": Loading.");
+        ui.playTape.textContent = "Play";
+        ui.playTape.disabled = true;
+        break;
+    case "blocked":
+        const resumeMessage = "Enter LOAD \"\" or press Resume for the next part.";
+        showInfo(ui.tapeInfo, env.tapeName + ": Stopped. " + resumeMessage);
+        ui.playTape.textContent = "Resume";
+        ui.playTape.disabled = false;
+        break;
+    case "done":
+        showInfo(ui.tapeInfo, env.tapeName + ": Ended.");
+        ui.playTape.textContent = "Play";
+        ui.playTape.disabled = true;
+        break;
+    }
 }
 
 function resetSystem() {
-    if (env.sfx !== null) {
-        resetSound(env.sfx);
-    }
-    resetMachine(env.machine);
-    // TAP file is kept at the same position, just switched to waiting
-    if (env.sfx !== null) {
-        resumeSound(env.sfx);
-    }
-}
-
-function handleEject() {
-    const hadCart = env.cartInserted;
-    env.cartInserted = false;
-    ejectDock(env.machine);
-    if (hadCart) {
-        resetSystem();
-    }
-    setStatus(ui.cartInfo, "No cartridge", false);
-}
-
-/**
- * @param {MediaFile} tap
- */
-function applyTap(tap) {
-    const err = insertTap(env.machine, tap.bytes);
-    if (err !== null) {
-        setStatus(ui.tapeInfo, err, true);
+    if (env.sfx === null) {
+        resetMachine(env.machine);
         return;
     }
-    const numBlocks = env.machine.tape.blocks.length;
-    setStatus(ui.tapeInfo, tap.name + ": " + numBlocks + " blocks. Enter LOAD \"\".", false);
+    resetSound(env.sfx);
+    resetMachine(env.machine);
+    resumeSound(env.sfx);
 }
 
-/**
- * @param {MediaFile} cart
- * @returns {boolean}
- */
-function applyCart(cart) {
-    const err = insertDock(env.machine, cart.bytes);
-    if (err !== null) {
-        setStatus(ui.cartInfo, err, true);
-        return false;
-    }
-    resetSystem();
-    setStatus(ui.cartInfo, cart.name + ": " + cartSummary(env.machine), false);
-    return true;
-}
 
 /**
  * @param {import("./machine.js").Machine} machine
  * @returns {string}
  */
 function cartSummary(machine) {
-    const banks = [
-        {name: "dock", pages: machine.dock, ramFlags: machine.dockRam},
-        {name: "EXROM", pages: machine.exCart, ramFlags: machine.exCartRam},
-        {name: "HOME", pages: machine.homeCart, ramFlags: machine.homeCartRam},
-    ];
+    /** @type {string[]} */
     const parts = [];
-    for (let b = 0; b < banks.length; b += 1) {
-        const bank = banks[b];
-        let rom = 0;
-        let ram = 0;
-        for (let i = 0; i < 8; i += 1) {
-            if (bank.pages[i] !== null) {
-                if (bank.ramFlags[i]) {
-                    ram += 1;
-                } else {
-                    rom += 1;
-                }
-            }
-        }
-        if (rom > 0) {
-            parts.push(rom + " " + bank.name + " ROM chunks");
-        }
-        if (ram > 0) {
-            parts.push(ram + " " + bank.name + " RAM chunks");
-        }
-    }
+    addBankSummary(parts, "dock", machine.dock, machine.dockRam);
+    addBankSummary(parts, "EXROM", machine.exCart, machine.exCartRam);
+    addBankSummary(parts, "HOME", machine.homeCart, machine.homeCartRam);
+
     let homePages = 0;
     for (let i = 0; i < 8; i += 1) {
         if (machine.homeRamSave[i] !== null) {
@@ -627,42 +807,58 @@ function cartSummary(machine) {
         return "no cartridge chunks.";
     }
     return parts.join(", ") + ".";
-}
-
-/**
- * @param {HTMLElement} el
- * @param {string} text
- * @param {boolean} isError
- */
-function setStatus(el, text, isError) {
-    el.textContent = text;
-    if (isError) {
-        el.classList.add("error");
-    } else {
-        el.classList.remove("error");
+    
+    /**
+     * @param {string[]} out
+     * @param {string} name
+     * @param {(Uint8Array | null)[]} pages
+     * @param {boolean[]} ramFlags
+     */
+    function addBankSummary(out, name, pages, ramFlags) {
+        let rom = 0;
+        let ram = 0;
+        for (let i = 0; i < 8; i += 1) {
+            if (pages[i] !== null) {
+                if (ramFlags[i]) {
+                    ram += 1;
+                } else {
+                    rom += 1;
+                }
+            }
+        }
+        if (rom > 0) {
+            out.push(rom + " " + name + " ROM chunks");
+        }
+        if (ram > 0) {
+            out.push(ram + " " + name + " RAM chunks");
+        }
     }
 }
 
-function toggleKeyboard() {
-    setKeyboardShown(!env.keyboardShown);
-}
-
-/** @param {boolean} shown */
-function setKeyboardShown(shown) {
-    env.keyboardShown = shown;
-    ui.keyboardToggle.checked = shown;
+/** @param {boolean} visible*/
+function setKeyboardVisibility(visible) {
+    env.keyboardVisible = visible;
+    ui.keyboardToggle.checked = visible;
     applyVisibility();
 }
 
 function toggleCanvasFullscreen() {
     if (document.fullscreenElement !== null || env.screenOnlyFallback) {
-        leaveFullscreen();
+        env.screenOnlyFallback = false;
+        if (document.fullscreenElement !== null && document.exitFullscreen !== undefined) {
+            document.exitFullscreen()?.then(
+                function () {
+                },
+                function () {
+                    setScreenOnly(false);
+                },
+            );
+            return;
+        }
+        setScreenOnly(false);
         return;
     }
-    enterSlotFullscreen();
-}
 
-function enterSlotFullscreen() {
     const slot = ui.screen.parentElement;
     if (slot?.requestFullscreen === undefined) {
         env.screenOnlyFallback = true;
@@ -679,24 +875,6 @@ function enterSlotFullscreen() {
     );
 }
 
-function leaveFullscreen() {
-    env.screenOnlyFallback = false;
-    if (document.fullscreenElement !== null && document.exitFullscreen !== undefined) {
-        document.exitFullscreen()?.then(
-            function () {
-            },
-            function () {
-                setScreenOnly(false);
-            },
-        );
-        return;
-    }
-    setScreenOnly(false);
-}
-
-function syncScreenOnly() {
-    setScreenOnly(document.fullscreenElement !== null || env.screenOnlyFallback);
-}
 
 /** @param {boolean} on */
 function setScreenOnly(on) {
@@ -712,7 +890,7 @@ function applyVisibility() {
         header = "none";
     }
     let keyboard = "";
-    if (env.screenOnly || !env.keyboardShown) {
+    if (env.screenOnly || !env.keyboardVisible) {
         keyboard = "none";
     }
     ui.pageHeader.style.display = header;

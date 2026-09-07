@@ -31,11 +31,12 @@ export function initJoysticks(joystick) {
     joystick[1] = joyIdle;
 }
 
-// Read the host gamepads into the two contact bytes. The Gamepad API only hands
-// out snapshots, so this polls rather than listening, and the caller does it
-// once per animation frame. The first two connected pads become player 1 and
-// player 2 whichever slots they occupy, so one pad always drives player 1.
 /**
+ * Read the host gamepads into the two contact bytes. The Gamepad API only hands
+ * out snapshots, so this polls rather than listening, and the caller does it
+ * once per animation frame. The first two connected pads become player 1 and
+ * player 2 whichever slots they occupy, so one pad always drives player 1.
+ *
  * @param {Uint8Array} joystick
  */
 export function pollJoysticks(joystick) {

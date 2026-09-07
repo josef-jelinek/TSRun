@@ -101,9 +101,10 @@ export function resumeSound(sfx) {
     }
 }
 
-// Spread the AY channels across the stereo image, or sum them the way the
-// single analog output on the machine does.
 /**
+ * Spread the AY channels across the stereo image, or sum them the way the
+ * single analog output on the machine does.
+ *
  * @param {Sfx} sfx
  * @param {boolean} on
  */
@@ -120,12 +121,23 @@ export function setSoundStereo(sfx, on) {
  * @param {import("./machine.js").AudioChunk} chunk
  */
 export function pushSound(sfx, chunk) {
-    sfx.queuedSamples += chunk.n;
+    let n = chunk.n;
+    // The machine reuses one 8192-sample buffer. A view of it can deserialize
+    // with the full backing store, so later frames would replay stale loader
+    // audio. Copy a cap of two frames, nothing more.
+    const maxN = sfx.frameSampleCount * 2;
+    if (n > maxN) {
+        n = maxN;
+    }
+    if (n <= 0) {
+        return;
+    }
+    sfx.queuedSamples += n;
     sfx.node.port.postMessage({
         type: "data",
-        ula: chunk.ula.subarray(0, chunk.n),
-        channelA: chunk.a.subarray(0, chunk.n),
-        channelB: chunk.b.subarray(0, chunk.n),
-        channelC: chunk.c.subarray(0, chunk.n),
+        ula: chunk.ula.slice(0, n),
+        channelA: chunk.a.slice(0, n),
+        channelB: chunk.b.slice(0, n),
+        channelC: chunk.c.slice(0, n),
     });
 }

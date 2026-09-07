@@ -14,6 +14,7 @@ const viewH = 480;
 /**
  * The program and texture stay bound for the life of the context, so drawScreen
  * only needs the context itself.
+ *
  * @typedef {{
  *   gl: WebGL2RenderingContext,
  *   crtOn: boolean,
@@ -71,16 +72,28 @@ export function setCrt(gfx, on) {
 export function resizeScreen(gfx) {
     const canvas = /** @type {HTMLCanvasElement} */ (gfx.gl.canvas);
     const workspace = canvas.parentElement;
+    // Fit the content box so padding on the slot stays around the canvas.
+    let slotW = viewW;
+    let slotH = viewH;
+    if (workspace !== null) {
+        const style = getComputedStyle(workspace);
+        const padX = Number.parseFloat(style.paddingLeft) + Number.parseFloat(style.paddingRight);
+        const padY = Number.parseFloat(style.paddingTop) + Number.parseFloat(style.paddingBottom);
+        slotW = workspace.clientWidth;
+        slotH = workspace.clientHeight;
+        if (Number.isFinite(padX)) {
+            slotW -= padX;
+        }
+        if (Number.isFinite(padY)) {
+            slotH -= padY;
+        }
+    }
     if (gfx.crtOn) {
-        let width = viewW;
-        let height = viewH;
-        if (workspace !== null) {
-            width = workspace.clientWidth;
-            height = Math.floor(width * viewH / viewW);
-            if (height > workspace.clientHeight) {
-                height = workspace.clientHeight;
-                width = Math.floor(height * viewW / viewH);
-            }
+        let width = slotW;
+        let height = Math.floor(width * viewH / viewW);
+        if (height > slotH) {
+            height = slotH;
+            width = Math.floor(height * viewW / viewH);
         }
         width = Math.max(width, 1);
         height = Math.max(height, 1);
@@ -98,12 +111,9 @@ export function resizeScreen(gfx) {
         gfx.gl.viewport(0, 0, canvas.width, canvas.height);
         return;
     }
-    let scale = 1;
-    if (workspace !== null) {
-        const fitX = Math.floor(workspace.clientWidth / viewW);
-        const fitY = Math.floor(workspace.clientHeight / viewH);
-        scale = Math.max(1, Math.min(fitX, fitY));
-    }
+    const fitX = Math.floor(slotW / viewW);
+    const fitY = Math.floor(slotH / viewH);
+    const scale = Math.max(1, Math.min(fitX, fitY));
     const width = viewW * scale;
     const height = viewH * scale;
     canvas.style.width = width + "px";

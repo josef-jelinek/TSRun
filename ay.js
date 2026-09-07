@@ -58,6 +58,7 @@ const ayEnvResetState = {
 /**
  * t is the T-state the chip has been integrated up to, and area* accumulate
  * level x duration since the last sample was taken.
+ *
  * @typedef {{
  *   tickT: number,
  *   t: number,
@@ -113,11 +114,12 @@ export function resetAy(ay, t) {
     ayRefreshLevels(ay);
 }
 
-// Move the chip clock without disturbing chip state, for when audio output
-// starts or the sample rate changes and the accumulated areas are stale. The
-// chip clock is free-running, so a seek to the time it already holds keeps its
-// tick phase instead of re-phasing the grid.
 /**
+ * Move the chip clock without disturbing chip state, for when audio output
+ * starts or the sample rate changes and the accumulated areas are stale. The
+ * chip clock is free-running, so a seek to the time it already holds keeps its
+ * tick phase instead of re-phasing the grid.
+ *
  * @param {Ay} ay
  * @param {number} t
  */
@@ -165,10 +167,11 @@ export function ayReadReg(ay, reg, portAIn) {
     return ay.regs[addr];
 }
 
-// Integrate the chip forward to an exact T-state, accumulating level x duration
-// per channel. Register writes flush through here first, so an envelope retrigger
-// lands on the T-state that wrote it rather than on the next sample boundary.
 /**
+ * Integrate the chip forward to an exact T-state, accumulating level x duration
+ * per channel. Register writes flush through here first, so an envelope retrigger
+ * lands on the T-state that wrote it rather than on the next sample boundary.
+ *
  * @param {Ay} ay
  * @param {number} t
  */
@@ -191,11 +194,12 @@ export function ayRunTo(ay, t) {
     }
 }
 
-// Advance the chip with nothing listening. The counters, noise shift register
-// and envelope still run, so a tone or envelope that should finish during a
-// discarded turbo burst really does; only the per-interval integration and the
-// cached output levels are skipped, the latter refreshed once at the end.
 /**
+ * Advance the chip with nothing listening. The counters, noise shift register
+ * and envelope still run, so a tone or envelope that should finish during a
+ * discarded turbo burst really does; only the per-interval integration and the
+ * cached output levels are skipped, the latter refreshed once at the end.
+ *
  * @param {Ay} ay
  * @param {number} t
  */
@@ -229,8 +233,11 @@ export function ayTakeSample(ay, period, channelA, channelB, channelC, at) {
     ay.areaC = 0;
 }
 
-// Clock tone every divider step and noise plus envelope on alternating steps.
-/** @param {Ay} ay */
+/**
+ * Clock tone every divider step and noise plus envelope on alternating steps.
+ *
+ * @param {Ay} ay
+ */
 function ayTick(ay) {
     const clock16 = !ay.clockDividerPhase;
     ay.clockDividerPhase = !ay.clockDividerPhase;
@@ -261,10 +268,13 @@ function ayTick(ay) {
     }
 }
 
-// Cache the three output levels. Everything that can change them - a tick, a
-// register write, an envelope step - calls this, so integrating a span is three
-// multiply-adds with no register decoding in the loop.
-/** @param {Ay} ay */
+/**
+ * Cache the three output levels. Everything that can change them - a tick, a
+ * register write, an envelope step - calls this, so integrating a span is three
+ * multiply-adds with no register decoding in the loop.
+ *
+ * @param {Ay} ay
+ */
 function ayRefreshLevels(ay) {
     const mixer = ay.regs[ayRegMixer];
     const noiseHigh = ay.noiseLevel !== 0;
