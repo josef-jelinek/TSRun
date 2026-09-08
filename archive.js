@@ -37,7 +37,7 @@ import {
 
 import {initJoysticks, pollJoysticks} from "./joystick.js";
 
-import {initKeyboard, handleKeyDown, handleKeyUp, handleBlur} from "./keyboard.js";
+import {initKeyboard, handleKeyDown, handleKeyUp, handleBlur, scaleKeyboardFromY} from "./keyboard.js";
 
 import {
     initSound,
@@ -85,6 +85,7 @@ const ui = {
     reset:            /** @type {HTMLButtonElement} */ (document.getElementById("reset")),
     screenSlot:       /** @type {HTMLElement} */       (document.getElementById("screen-slot")),
     screen:           /** @type {HTMLCanvasElement} */ (document.getElementById("screen")),
+    keyboardSplit:    /** @type {HTMLElement} */       (document.getElementById("keyboard-split")),
     keyboard:         /** @type {HTMLElement} */       (document.getElementById("keyboard")),
     keyboardToggle:   /** @type {HTMLInputElement} */  (document.getElementById("keyboard-toggle")),
     crt:              /** @type {HTMLInputElement} */  (document.getElementById("crt")),
@@ -259,6 +260,37 @@ ui.split.onpointerup = function (/** @type {PointerEvent} */ e) {
 
 ui.split.onpointercancel = function (/** @type {PointerEvent} */ e) {
     endSplit(e.pointerId);
+};
+
+ui.keyboardSplit.onpointerdown = function (/** @type {PointerEvent} */ e) {
+    if (e.button !== 0) {
+        return;
+    }
+    e.preventDefault();
+    document.body.classList.add("keyboard-splitting");
+    scaleKeyboardFromY(ui.keyboard, ui.keyboardSplit, e.clientY);
+    if (env.gfx !== null) {
+        resizeScreen(env.gfx);
+    }
+    ui.keyboardSplit.setPointerCapture(e.pointerId);
+};
+
+ui.keyboardSplit.onpointermove = function (/** @type {PointerEvent} */ e) {
+    if (!ui.keyboardSplit.hasPointerCapture(e.pointerId)) {
+        return;
+    }
+    scaleKeyboardFromY(ui.keyboard, ui.keyboardSplit, e.clientY);
+    if (env.gfx !== null) {
+        resizeScreen(env.gfx);
+    }
+};
+
+ui.keyboardSplit.onpointerup = function (/** @type {PointerEvent} */ e) {
+    endKeyboardSplit(e.pointerId);
+};
+
+ui.keyboardSplit.onpointercancel = function (/** @type {PointerEvent} */ e) {
+    endKeyboardSplit(e.pointerId);
 };
 
 ui.screenSlot.onpointerdown = function () {
@@ -678,6 +710,14 @@ function endSplit(pointerId) {
     document.body.style.cursor = "";
 }
 
+/** @param {number} pointerId */
+function endKeyboardSplit(pointerId) {
+    if (ui.keyboardSplit.hasPointerCapture(pointerId)) {
+        ui.keyboardSplit.releasePointerCapture(pointerId);
+    }
+    document.body.classList.remove("keyboard-splitting");
+}
+
 function applyVisibility() {
     let chrome = "";
     if (env.screenOnly) {
@@ -695,6 +735,7 @@ function applyVisibility() {
     ui.split.style.display = chrome;
     ui.options.style.display = chrome;
     ui.status.style.display = chrome;
+    ui.keyboardSplit.style.display = keyboard;
     ui.keyboard.style.display = keyboard;
     if (env.gfx !== null) {
         resizeScreen(env.gfx);
