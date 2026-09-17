@@ -16,4 +16,8 @@ interface AudioWorkletProcessorImpl extends AudioWorkletProcessor {
 
 declare const AudioWorkletProcessor: AudioWorkletProcessorConstructor;
 
+declare const sampleRate: number;
+
+declare const currentTime: number;
+
 declare function registerProcessor(name: string, processorCtor: Function): void;

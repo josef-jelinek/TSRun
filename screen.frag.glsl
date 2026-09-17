@@ -7,9 +7,10 @@ uniform bool u_crt;
 in vec2 v_uv;
 out vec4 o_color;
 
-// TS 2068 palette. Index is the colour value, bit 0 blue, bit 1 red, bit 2
-// green, plus 8 when BRIGHT is set. These values are derived from the model
-// below rather than measured from hardware.
+// TS 2068 palette, used when the CRT filter is active. Index is the colour
+// value, bit 0 blue, bit 1 red, bit 2 green, plus 8 when BRIGHT is set.
+// These values are derived from the model below rather than measured from
+// hardware.
 //
 // Hue uses the chroma vector angles of Technical Manual Section 2.1.11.1, but
 // only the TS 2068 minus NTSC differences (blue 0, magenta +2, red +4, green
@@ -55,6 +56,23 @@ vec3 palette_color(uint color_index) {
     return vec3(color_palette[int(color_index)]) / 255.0;
 }
 
+// Idealized palette, used when the CRT filter is off: the same on/off level
+// for every channel, no hue shift, with BRIGHT adding a constant offset to
+// all three components. Uses the same 0.80/0.20 split as the CRT palette's
+// luma model above.
+const uint IDEAL_LEVEL = 204u;        // 0xCC, 0.80 * 255
+const uint IDEAL_BRIGHT_OFFSET = 51u; // 0x33, 0.20 * 255
+
+vec3 idealized_color(uint color_index) {
+    uint blue_bit = color_index & 1u;
+    uint red_bit = (color_index >> 1u) & 1u;
+    uint green_bit = (color_index >> 2u) & 1u;
+    uint bright_bit = (color_index >> 3u) & 1u;
+    uvec3 level = uvec3(red_bit, green_bit, blue_bit) * IDEAL_LEVEL
+        + uvec3(bright_bit) * IDEAL_BRIGHT_OFFSET;
+    return vec3(level) / 255.0;
+}
+
 float gaussian_weight(float offset, float inv_sigma_squared) {
     return exp(-0.5 * offset * offset * inv_sigma_squared);
 }
@@ -62,7 +80,7 @@ float gaussian_weight(float offset, float inv_sigma_squared) {
 void main() {
     if (!u_crt) {
         uint color_index = texture(u_tex, v_uv).r;
-        o_color = vec4(palette_color(color_index), 1.0);
+        o_color = vec4(idealized_color(color_index), 1.0);
         return;
     }
 

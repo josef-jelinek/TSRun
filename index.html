@@ -4,102 +4,20 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <link rel="icon" type="image/x-icon" href="favicon.ico">
+<link rel="stylesheet" href="app.css">
 <title>TSRun</title>
 <style>
 :root {
-    color-scheme: dark;
-    --paper: #111;
-    --ink: #EEE;
-    --muted: #999;
-    --line: #333;
     --accent: #0BF;
-    --control-radius: 3.5px;
-}
-html, body {
-    height: 100%;
-    margin: 0;
-    font: 13px/1.2 monospace;
-    background: var(--paper);
-    color: var(--ink);
-}
-body {
-    display: flex;
-    flex-direction: column;
-    min-height: 100%;
 }
 header {
     padding: 10px 14px 5px;
-    border-bottom: 1px solid var(--line);
-}
-.colbox,
-.rowbox {
-    display: flex;
-    gap: 6px;
-}
-.colbox {
-    flex-direction: column;
-    flex: 0;
-    align-items: stretch;
-}
-.rowbox {
-    flex-direction: row;
-    flex-wrap: wrap;
-    align-items: center;
-    min-width: 0;
-}
-a {
-    color: var(--accent);
-}
-button, input {
-    font: inherit;
-}
-button,
-.switch {
-    display: inline-block;
-    padding: 5px 12px;
-    border: 1px solid #666;
-    border-radius: var(--control-radius);
-    font-weight: bold;
-    background: #333;
-    color: var(--ink);
-    cursor: pointer;
-}
-button:hover,
-.switch:hover {
-    background: #444;
-}
-button:active,
-.switch:active {
-    background: #000;
-}
-.switch {
-    position: relative;
-}
-.switch:has(> input[type="checkbox"]:checked) {
-    color: #000;
-    background: var(--accent);
-}
-.switch > input[type="checkbox"] {
-    position: absolute;
-    width: 0;
-    height: 0;
-    margin: 0;
-    opacity: 0;
-    pointer-events: none;
-}
-.media-row {
-    flex-wrap: nowrap;
 }
 .media-info {
     flex: 1 1 auto;
-    min-width: 0;
-    overflow-wrap: break-word;
-    color: var(--muted);
 }
-.media-info.error,
-.media-info > .error {
-    font-weight: 600;
-    color: var(--accent);
+.media-row {
+    flex-wrap: nowrap;
 }
 .rom-load {
     display: flex;
@@ -133,63 +51,6 @@ button:active,
     height: 100%;
     background: var(--paper);
 }
-#screen {
-    display: block;
-    image-rendering: pixelated;
-}
-#screen.crt {
-    image-rendering: auto;
-}
-#keyboard-split {
-    flex: 0 0 6px;
-    cursor: row-resize;
-    background: var(--line);
-    touch-action: none;
-}
-#keyboard-split:hover,
-body.keyboard-splitting #keyboard-split {
-    background: var(--accent);
-}
-body.keyboard-splitting {
-    user-select: none;
-}
-#keyboard {
-    flex-shrink: 0;
-    padding: 10px 14px 14px;
-    border-top: none;
-    touch-action: none;
-}
-.keyboard-face {
-    position: relative;
-    width: 533px;
-    aspect-ratio: 533 / 191;
-    margin: 0 auto;
-    background: url("keyboard.png") center / 100% 100% no-repeat;
-    isolation: isolate;
-    user-select: none;
-    -webkit-user-select: none;
-    -webkit-touch-callout: none;
-    -webkit-user-drag: none;
-    -webkit-tap-highlight-color: transparent;
-    touch-action: none;
-}
-.keyboard-hit {
-    position: absolute;
-    box-sizing: border-box;
-    user-select: none;
-    -webkit-user-select: none;
-    touch-action: none;
-    -webkit-touch-callout: none;
-    -webkit-tap-highlight-color: transparent;
-}
-.keyboard-hit.hover {
-    background: color-mix(in srgb, var(--accent) 25%, transparent);
-}
-.keyboard-hit.on,
-.keyboard-hit.on.hover {
-    background: #FFF;
-    mix-blend-mode: difference;
-}
 @media (max-width: 700px) {
     .media-row {
         flex-wrap: wrap;
@@ -206,7 +67,7 @@ body.keyboard-splitting {
         <label class="switch" title="CRT display filter"><input id="crt" type="checkbox" checked>CRT</label>
         <label class="switch" title="Spread AY channels A/B/C across the stereo image; the hardware is mono"><input id="stereo" type="checkbox">Stereo</label>
         <button id="fullscreen-toggle" title="Fullscreen (F11)">Fullscreen</button>
-        <div class="media-info"><span id="init-info">Initializing...</span> <span id="sound-info"></span> <span id="startup-file-info"></span></div>
+        <div class="media-info"><span id="init-info">Initializing...</span> <span id="sound-info" title="Emulated frames per second (60.1 is real time), then audio an overrun discarded and audio an underrun filled with silence, over the last second"></span> <span id="startup-file-info"></span></div>
         <a href="archive.html">Archive browser</a>
         <a href="https://github.com/josef-jelinek/TSRun">GitHub repo</a>
     </div>

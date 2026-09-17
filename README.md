@@ -1,5 +1,7 @@
 # TSRun
 
+Try it live: <https://josef-jelinek.github.io/TSRun/>
+
 TSRun is a browser emulator for the Timex Sinclair 2068. It loads default
 HOME ROM and EXROM from `roms/` when those files are available.
 Both ULA beeper and AY-3-8912 are supported. However, the browser may stay
@@ -66,8 +68,9 @@ with `encodeURIComponent`, especially if it has its own query parameters:
 ```
 
 Cross-origin URLs must allow the browser to read them through CORS. Tape files
-are inserted after the ROMs finish loading; the Auto switch still determines
-whether the bundled ROMs enter their tape loader immediately. DCK files are
+are inserted after the ROM fetch finishes, whether it succeeds or fails; the
+Auto switch still determines whether the bundled ROMs enter their tape loader
+immediately. DCK files are
 inserted and booted through a reset. A tape loaded this way does not unplug a
 cartridge; dock memory stays mapped so a cart and a tape can be used together.
 
@@ -118,8 +121,9 @@ file rather than as a ZIP.
   times faster than realtime while the tape is playing, including TZX pauses.
   Uncheck for ROM-speed playback with the leader tone. T-state custom loaders
   warp as well; this is not an instant ROM poke. Warped frames are not drawn
-  or mixed. After each burst, one catch-up frame is painted and mixed so
-  loader tones can be heard.
+  or mixed. After each burst the frames the tape landed on are painted and
+  mixed, as many as the audio queue has room for, so the loader stays audible
+  as a run of snippets while the tape warps past.
 - Load Cart - insert a `.dck` dock image and reset so the ROM can autostart
   LROS/AROS. Extra 8K chunks are paged by the program with `OUT 244`.
 - Eject - on the cartridge row, after Load Cart. Unplugs the cartridge, restores any
@@ -153,23 +157,44 @@ Selecting a tape ejects any cartridge first, then inserts the tape, so Auto can 
 
 ## Sound
 
-The ULA speaker (port `FE` bit 4) and the AY-3-8912 (ports `F5`/`F6`) are
-mixed in the browser. A click or key may be required before anything is
-audible. The machine runs at 60.1145 Hz wall-clock; about one video frame of
-samples is queued so `BEEP` and tape edges stay in time.
+The SCLD speaker/tape output (port `FE` bits 3 and 4) and the AY-3-8912
+(ports `F5`/`F6`) are mixed in the browser. The SCLD exclusive-ors tape-output
+bit 3 and beeper bit 4 into the single signal present on the real machine's
+`SPKR/TAPE OUT` pin. A click or key may be required before anything is audible.
+The machine runs at 60.1145 Hz. Two to three video frames of samples are kept
+queued: the audio thread asks for one more whenever the queue falls below two,
+and the machine runs a frame only once a frame has been played. Emulation
+therefore keeps the audio device's pace rather than the display's, which is what
+stops a refresh rate that does not divide into 60.1145 Hz from running the
+machine fast. Two frames of slack absorb a late refresh or a collection pause;
+the cost is that `BEEP` and tape edges are heard about 35 ms late.
+
+The status line beside the tape info reports what that is doing, once a second:
+emulated frames per second, then audio an overrun discarded and silence an
+underrun had to fill. At speed it reads about `60.1 fps, cut 0 ms, gap 0 ms`;
+frames per second well above 60.1 means the frame loop is running the machine
+too fast, and a standing cut or gap means production and playback have drifted
+apart.
 
 Both sources are integrated on the CPU clock. The AY runs on its own tick grid
 (one tick per 16 T-states) rather than on the output sample rate, and every
 beeper edge, AY register write and tape edge is applied at the exact T-state it
-happens. Each output sample is the time-weighted average over its window, so an
-envelope retrigger lands where the program put it instead of being rounded to
-the nearest sample. `BEEP` uses the
-ULA; `SOUND register,value` talks to the AY. Tape EAR is mixed quietly so
-loading can be heard. The machine sums the three AY channels and the beeper into
-one analog output, so the default here is mono as well. The Stereo switch
-spreads the AY channels ABC across the image, which makes individual voices
-easier to pick out. Both mixes carry the same total signal, so switching between
-them does not change the level.
+happens. The main-board amplifier's 680 kOhm/20 pF feedback low-pass (about
+11.7 kHz) is integrated in emulated time before PCM sampling, then each output
+sample is the time-weighted average over its window. This attenuates edges before
+they can alias and keeps an envelope retrigger at the T-state where the program
+put it. The tied AY outputs and SCLD output are weighted by their schematic
+47 kOhm and 100 kOhm input resistors. The mix is then AC coupled by a 20 Hz
+one-pole, as the speaker and the TV audio input are: the chips put out unipolar
+levels, and without it a voice falling silent steps the output by its own offset
+instead of returning to rest.
+`BEEP` uses the ULA; `SOUND register,value` talks to the AY. Tape EAR is mixed
+quietly so loading can be heard; this monitor is an emulator convenience rather
+than part of the amplifier path. The machine sums the three AY channels and the
+beeper into one analog output, so the default here is mono as well. The Stereo
+switch spreads the AY channels ABC across the image, which makes individual
+voices easier to pick out. Both mixes carry the same total signal, so switching
+between them does not change the level.
 
 ## Keyboard
 
@@ -191,8 +216,9 @@ Extra mappings:
 - `.` `,` `;` `"` `-` `=` `/` - the usual Symbol Shift pairs
 
 **F1** or the Keyboard switch shows or hides the original TS 2068 keyboard
-under the screen. The emulator display scales to the remaining space. Overlay
-keys can be clicked; they light when the matching matrix bits are down.
+(`keyboard.png`) under the screen. The emulator display scales to the remaining
+space. Overlay keys can be clicked; they invert when the matching matrix bits
+are down.
 
 **F11** or the Fullscreen button makes the page fullscreen with only the
 emulator canvas (4:3, integer scaled). Escape or F11 again restores the header.
@@ -251,19 +277,23 @@ beam renders as bars that break mid-line, as on hardware. Bit 6 of port `FF` inh
 ## Repository files
 
 - `README.md` - project overview and user documentation.
-- `index.html` - emulator page markup and styles.
-- `main.js` - UI wiring, ROM load, and the animation-frame loop.
-- `archive.html` - archive browser page markup and styles.
-- `archive.js` - archive list and emulator host for that page.
-- `boot.js` - shader and default ROM fetch shared by both pages.
+- `app.css` - shared controls, keyboard overlay, and base chrome for both pages.
+- `index.html` - emulator page markup and page-specific styles.
+- `main.js` - emulator page: local tape, cart, and ROM pickers, and `?url=` loading.
+- `archive.html` - archive browser page markup and page-specific styles.
+- `archive.js` - archive.org list, search, and member loading.
+- `host.js` - shared emulator session: machine, display, sound, frame loop, and shared chrome.
+- `boot.js` - shader and default ROM fetch.
+- `load.js` - TAP, TZX, DCK, or ZIP fetch for `index.html?url=`.
 - `io.js` - HTTP GET and local file reads.
 - `machine.js` - memory map, Timex paging ports, and frame run.
 - `z80.js` - Z80 CPU.
 - `keyboard.js` - host keyboard mapping and the F1 overlay.
+- `keyboard.png` - TS 2068 keyboard art for the overlay.
 - `joystick.js` - host gamepads read as the two TS 2068 joystick ports.
 - `tape.js` - TAP/TZX files and cassette EAR pulses.
 - `dock.js` - Warajevo `.dck` cartridge parse.
-- `zip.js` - ZIP listing and entry extraction for `index.html` `?url=` ZIP files. The archive page does not use it.
+- `zip.js` - ZIP listing and entry extraction used by `load.js` for `?url=` ZIP files. The archive page does not use it.
 - `media.js` - tape, cartridge, and junk file-name rules.
 - `tsarchive.js` - archive.org Timex Sinclair Software Archive client.
 - `ay.js` - AY-3-8912 sound chip.

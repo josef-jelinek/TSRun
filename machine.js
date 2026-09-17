@@ -3,11 +3,15 @@ import {createTape, parseTape, resetTape, startTape, rearmTape, stopTape, earLev
 import {parseDck} from "./dock.js";
 import {createAy, resetAy, aySeek, ayRunTo, ayRunSilent, ayTakeSample, ayWriteReg, ayReadReg} from "./ay.js";
 
-const homeRomSize     = 16384;
-const exRomSize       = 8192;
-const tStatesPerFrame = 58688;
-const cpuHz           = 3528000;
+export const homeRomSize     = 16384;
+export const exRomSize       = 8192;
+export const tStatesPerFrame = 58688;
+export const cpuHz           = 3528000;
 const ayClockHz       = cpuHz / 2;
+// The audio amplifier feedback is 680 kOhm in parallel with 20 pF. Its one-pole
+// response is integrated in emulated time before conversion to PCM, so fast
+// ULA and AY edges are attenuated before they could alias.
+const amplifierTauT   = cpuHz * 680000 * 20e-12;
 // Tone counters run at the AY clock over 8, which is one tick every 16 CPU
 // T-states: an exact grid, so the chip needs no rate accumulator.
 const ayTickT  = cpuHz / (ayClockHz / 8);
@@ -200,6 +204,7 @@ const windowStartT = activeStartT - scrX / tPerColumn;
  *   ulaOut:      number,
  *   earBit:      number,
  *   ulaLevel:    number,
+ *   ulaFiltered: number,
  *   ulaT:        number,
  *   ulaArea:     number,
  *   soundOn:     boolean,
@@ -217,6 +222,9 @@ const windowStartT = activeStartT - scrX / tPerColumn;
  */
 
 /**
+ * One frame of mixed planes for the audio host to interleave. n is how many
+ * samples are filled; the typed arrays may be longer.
+ *
  * @typedef {{
  *   n:   number,
  *   ula: Float32Array,
@@ -283,23 +291,24 @@ export function createMachine(keyMatrix, joystick) {
                 ioWrite(m, port, value);
             },
         },
-        ay: createAy(ayTickT),
-        ayLatch:    0,
-        ulaOut:     0,
-        earBit:     0,
-        ulaLevel:   0,
-        ulaT:       0,
-        ulaArea:    0,
-        soundOn:    false,
-        sampleRate: 44100,
-        sampleT:    0,
-        sampleEndT: 0,
-        sampleAcc:  0,
-        audioFill:  0,
-        audioUla:   new Float32Array(audioCap),
-        audioA:     new Float32Array(audioCap),
-        audioB:     new Float32Array(audioCap),
-        audioC:     new Float32Array(audioCap),
+        ay:           createAy(ayTickT, amplifierTauT),
+        ayLatch:      0,
+        ulaOut:       0,
+        earBit:       0,
+        ulaLevel:     0,
+        ulaFiltered: 0,
+        ulaT:         0,
+        ulaArea:      0,
+        soundOn:      false,
+        sampleRate:   44100,
+        sampleT:      0,
+        sampleEndT:   0,
+        sampleAcc:    0,
+        audioFill:    0,
+        audioUla:     new Float32Array(audioCap),
+        audioA:       new Float32Array(audioCap),
+        audioB:       new Float32Array(audioCap),
+        audioC:       new Float32Array(audioCap),
         onEarEdge: function (t, level) {
             renderAudioTo(m, t);
             m.earBit = level;
@@ -308,6 +317,44 @@ export function createMachine(keyMatrix, joystick) {
     };
     resetMachine(m);
     return m;
+}
+
+/**
+ * @param {Machine} m
+ * @param {ArrayBuffer | Uint8Array} bytes
+ * @returns {string | null}
+ */
+export function setHomeRom(m, bytes) {
+    return setRom(m.homeRom, bytes, homeRomSize);
+}
+
+/**
+ * @param {Machine} m
+ * @param {ArrayBuffer | Uint8Array} bytes
+ * @returns {string | null}
+ */
+export function setExRom(m, bytes) {
+    return setRom(m.exRom, bytes, exRomSize);
+}
+
+/**
+ * @param {Uint8Array} dest
+ * @param {ArrayBuffer | Uint8Array} bytes
+ * @param {number} byteLength
+ * @returns {string | null}
+ */
+function setRom(dest, bytes, byteLength) {
+    let src;
+    if (bytes instanceof Uint8Array) {
+        src = bytes;
+    } else {
+        src = new Uint8Array(bytes);
+    }
+    if (src.length !== byteLength) {
+        return "Expected " + byteLength + ", got " + src.length + " bytes.";
+    }
+    dest.set(src);
+    return null;
 }
 
 /** @param {Machine} m */
@@ -324,6 +371,7 @@ export function resetMachine(m) {
     m.ayLatch = 0;
     m.ulaOut = 0;
     m.earBit = 0;
+    m.ulaFiltered = 0;
     resetTape(m.tape);
     resetTapePoll(m);
     setUlaLevel(m);
@@ -432,6 +480,43 @@ export function takeAudio(m) {
 }
 
 /**
+ * @typedef {"empty" | "ready" | "playing" | "blocked" | "done"} TapeState
+ */
+
+/**
+ * @typedef {{
+ *   state: TapeState,
+ *   blockCount: number,
+ * }} TapeInfo
+ */
+
+/**
+ * Transport position the host paints. blockCount is only meaningful once a
+ * tape is loaded.
+ *
+ * @param {Machine} m
+ * @returns {TapeInfo}
+ */
+export function tapeInfo(m) {
+    return {
+        state: m.tape.state,
+        blockCount: m.tape.blockCount,
+    };
+}
+
+/**
+ * Where the transport is. The frame loop reads this once per animation frame
+ * and again on every emulated frame of a turbo burst, so it returns the bare
+ * state instead of allocating a TapeInfo.
+ *
+ * @param {Machine} m
+ * @returns {TapeState}
+ */
+export function tapeState(m) {
+    return m.tape.state;
+}
+
+/**
  * Install a TAP or TZX image. The previous tape is ejected first, including
  * when the new bytes fail to parse.
  *
@@ -523,6 +608,72 @@ export function insertDock(m, bytes) {
 /** @param {Machine} m */
 export function ejectDock(m) {
     clearCart(m);
+}
+
+/**
+ * @typedef {{
+ *   hasCart: boolean,
+ *   summary: string,
+ * }} CartInfo
+ */
+
+/**
+ * Dock occupancy for status text and for whether unplugging a cart should
+ * reset the machine.
+ *
+ * @param {Machine} m
+ * @returns {CartInfo}
+ */
+export function cartInfo(m) {
+    /** @type {string[]} */
+    const parts = [];
+    addBankSummary(parts, "dock", m.dock, m.dockRam);
+    addBankSummary(parts, "EXROM", m.exCart, m.exCartRam);
+    addBankSummary(parts, "HOME", m.homeCart, m.homeCartRam);
+
+    let homePages = 0;
+    for (let i = 0; i < 8; i += 1) {
+        if (m.homeRamSave[i] !== null) {
+            homePages += 1;
+        }
+    }
+    if (homePages > 0) {
+        parts.push(homePages + " HOME RAM pages");
+    }
+    let summary = "no cartridge chunks.";
+    if (parts.length > 0) {
+        summary = parts.join(", ") + ".";
+    }
+    return {
+        hasCart: parts.length > 0,
+        summary,
+    };
+}
+
+/**
+ * @param {string[]} out
+ * @param {string} name
+ * @param {(Uint8Array | null)[]} pages
+ * @param {boolean[]} ramFlags
+ */
+function addBankSummary(out, name, pages, ramFlags) {
+    let rom = 0;
+    let ram = 0;
+    for (let i = 0; i < 8; i += 1) {
+        if (pages[i] !== null) {
+            if (ramFlags[i]) {
+                ram += 1;
+            } else {
+                rom += 1;
+            }
+        }
+    }
+    if (rom > 0) {
+        out.push(rom + " " + name + " ROM chunks");
+    }
+    if (ram > 0) {
+        out.push(ram + " " + name + " RAM chunks");
+    }
 }
 
 /**
@@ -775,7 +926,7 @@ function ioWrite(m, port, value) {
     if ((p & 1) === 0) {
         renderSound(m, m.tstates);
         videoRunTo(m, m.tstates);
-        m.ulaOut = value & 0x10;
+        m.ulaOut = value & 0x18;
         setUlaLevel(m);
         m.border = value & 7;
     }
@@ -1192,7 +1343,7 @@ function renderSound(m, untilT) {
         // Keep its counters, noise and envelope advancing so state that should
         // move on during a discarded turbo burst actually does.
         ayRunSilent(m.ay, untilT);
-        m.ulaT = untilT;
+        ulaRunTo(m, untilT);
         return;
     }
     // Each tape callback closes preceding sample windows before changing EAR,
@@ -1218,8 +1369,8 @@ function renderAudioTo(m, untilT) {
         if (m.audioFill >= maxFill) {
             // Behind by more than one frame: keep this frame's samples and
             // jump the clocks, or the worklet would play a backlog of EAR.
-            aySeek(m.ay, untilT);
-            m.ulaT = untilT;
+            ayRunSilent(m.ay, untilT);
+            ulaRunTo(m, untilT);
             m.ulaArea = 0;
             m.sampleAcc = 0;
             m.sampleEndT = untilT;
@@ -1255,9 +1406,16 @@ function ulaRunTo(m, t) {
     if (t <= m.ulaT) {
         return;
     }
+    const dur = t - m.ulaT;
+    // ay.js precomputes its decay, because a chip tick is always one of a
+    // handful of durations. This one spans a sample window, a port write or a
+    // whole silent frame, so there is nothing to tabulate.
+    const decay = Math.exp(-dur / amplifierTauT);
+    const delta = m.ulaFiltered - m.ulaLevel;
     if (m.soundOn) {
-        m.ulaArea += m.ulaLevel * (t - m.ulaT);
+        m.ulaArea += m.ulaLevel * dur + delta * amplifierTauT * (1 - decay);
     }
+    m.ulaFiltered = m.ulaLevel + delta * decay;
     m.ulaT = t;
 }
 
@@ -1270,7 +1428,10 @@ function ulaRunTo(m, t) {
  * @param {Machine} m
  */
 function setUlaLevel(m) {
-    let level = m.ulaOut >>> 4;
+    // The SCLD exposes one SPKR/TAPE OUT pin. The ROM holds tape bit 3 high
+    // while toggling beeper bit 4, and holds bit 4 low while toggling bit 3,
+    // which makes their internal combination an exclusive-or.
+    let level = ((m.ulaOut >>> 3) ^ (m.ulaOut >>> 4)) & 1;
     const tape = m.tape;
     if (m.earBit === 1 && tape.state === "playing" && tape.phase !== "start" && tape.phase !== "pause") {
         level += earMix;

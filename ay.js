@@ -72,6 +72,9 @@ const ayEnvResetState = {
  *   env: AyEnv,
  *   clockDividerPhase: boolean,
  *   out: Float64Array,
+ *   filterOut: Float64Array,
+ *   filterDecay: Float64Array,
+ *   filterTauT: number,
  *   areaA: number,
  *   areaB: number,
  *   areaC: number,
@@ -79,12 +82,16 @@ const ayEnvResetState = {
  */
 
 /**
+ * Create the PSG with its machine clock and external amplifier time constant.
+ *
  * @param {number} tickT T-states between chip ticks
+ * @param {number} filterTauT external output-filter time constant in T-states
  * @returns {Ay}
  */
-export function createAy(tickT) {
+export function createAy(tickT, filterTauT) {
     const ay = {
         tickT,
+        filterTauT,
         t: 0,
         nextTickT: 0,
         regs: new Uint8Array(16),
@@ -93,7 +100,12 @@ export function createAy(tickT) {
         ...ayResetState,
         env: {...ayEnvResetState},
         out: new Float64Array(3),
+        filterOut: new Float64Array(3),
+        filterDecay: new Float64Array(tickT + 1),
     };
+    for (let t = 0; t <= tickT; t += 1) {
+        ay.filterDecay[t] = Math.exp(-t / filterTauT);
+    }
     resetAy(ay, 0);
     return ay;
 }
@@ -109,6 +121,7 @@ export function resetAy(ay, t) {
     ay.toneLevel.fill(0);
     Object.assign(ay, ayResetState);
     Object.assign(ay.env, ayEnvResetState);
+    ay.filterOut.fill(0);
     ay.t = t;
     ay.nextTickT = t + ay.tickT;
     ayRefreshLevels(ay);
@@ -176,43 +189,20 @@ export function ayReadReg(ay, reg, portAIn) {
  * @param {number} t
  */
 export function ayRunTo(ay, t) {
-    while (t > ay.t) {
-        let next = ay.nextTickT;
-        if (next > t) {
-            next = t;
-        }
-        const dur = next - ay.t;
-        ay.areaA += ay.out[0] * dur;
-        ay.areaB += ay.out[1] * dur;
-        ay.areaC += ay.out[2] * dur;
-        ay.t = next;
-        if (ay.t === ay.nextTickT) {
-            ayTick(ay);
-            ayRefreshLevels(ay);
-            ay.nextTickT += ay.tickT;
-        }
-    }
+    ayAdvanceTo(ay, t, true);
 }
 
 /**
  * Advance the chip with nothing listening. The counters, noise shift register
  * and envelope still run, so a tone or envelope that should finish during a
- * discarded turbo burst really does; only the per-interval integration and the
- * cached output levels are skipped, the latter refreshed once at the end.
+ * discarded turbo burst really does; only the per-interval sample areas are
+ * skipped.
  *
  * @param {Ay} ay
  * @param {number} t
  */
 export function ayRunSilent(ay, t) {
-    if (t <= ay.t) {
-        return;
-    }
-    while (ay.nextTickT <= t) {
-        ayTick(ay);
-        ay.nextTickT += ay.tickT;
-    }
-    ay.t = t;
-    ayRefreshLevels(ay);
+    ayAdvanceTo(ay, t, false);
 }
 
 /**
@@ -231,6 +221,42 @@ export function ayTakeSample(ay, period, channelA, channelB, channelC, at) {
     ay.areaA = 0;
     ay.areaB = 0;
     ay.areaC = 0;
+}
+
+/**
+ * Advance both the chip and its external analog reconstruction filter.
+ *
+ * @param {Ay} ay
+ * @param {number} t
+ * @param {boolean} collect
+ */
+function ayAdvanceTo(ay, t, collect) {
+    while (t > ay.t) {
+        let next = ay.nextTickT;
+        if (next > t) {
+            next = t;
+        }
+        const dur = next - ay.t;
+        const decay = ay.filterDecay[dur];
+        const areaScale = ay.filterTauT * (1 - decay);
+        const deltaA = ay.filterOut[0] - ay.out[0];
+        const deltaB = ay.filterOut[1] - ay.out[1];
+        const deltaC = ay.filterOut[2] - ay.out[2];
+        if (collect) {
+            ay.areaA += ay.out[0] * dur + deltaA * areaScale;
+            ay.areaB += ay.out[1] * dur + deltaB * areaScale;
+            ay.areaC += ay.out[2] * dur + deltaC * areaScale;
+        }
+        ay.filterOut[0] = ay.out[0] + deltaA * decay;
+        ay.filterOut[1] = ay.out[1] + deltaB * decay;
+        ay.filterOut[2] = ay.out[2] + deltaC * decay;
+        ay.t = next;
+        if (ay.t === ay.nextTickT) {
+            ayTick(ay);
+            ayRefreshLevels(ay);
+            ay.nextTickT += ay.tickT;
+        }
+    }
 }
 
 /**
