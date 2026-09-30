@@ -94,7 +94,8 @@ file rather than as a ZIP.
 
 The page is a TS 2068 on a desk: a TV showing the emulated screen, a TS 2020
 program recorder with a printout of the tape beside it, and the computer case
-below with the onscreen keyboard, the ROM hatch, and the cartridge dock.
+below with the onscreen keyboard, the ROM chips seen through an opening in the
+case, and the cartridge dock.
 
 The TV:
 
@@ -164,7 +165,7 @@ The case:
   a program that installed an NMI handler will run it.
 - Keys - show or hide the onscreen keyboard (also F1). With the keyboard
   hidden, the case folds into a strip so the TV gets the room.
-- ROM hatch, Load ROM0 - replace the 16K HOME ROM from a `.rom` / `.bin` file
+- ROMs, Load ROM0 - replace the 16K HOME ROM from a `.rom` / `.bin` file
   and reset. Load ROM1 replaces the 8K EXROM the same way.
 - Dock, Load - insert a `.dck` dock image and reset so the ROM can autostart
   LROS/AROS. Extra 8K chunks are paged by the program with `OUT 244`. The slot

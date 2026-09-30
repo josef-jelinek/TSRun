@@ -1,12 +1,13 @@
 /* Shared look of both pages: the TS 2068 on a desk. The emulated screen sits
    in a TV, a TS 2020 program recorder with a printout of the tape's blocks
    stands beside it, and the silver case below carries the machine keys, the
-   onscreen keyboard, the dock door, and the joystick ports. TV, recorder, and
-   case share the silver finish, with dark recesses for the screen, cassette
-   window, and keys. The palette is greys with the badge red as the only
-   emphasis; the badge stripe and the number-row colour names are kept as
-   printed on the machine. Each page sets --side, the width of the desk
-   columns beside the TV, and places the parts with grid areas. */
+   onscreen keyboard, the ROM chips seen through an opening, the dock door, and
+   the joystick ports. TV, recorder, and case share the silver finish, with
+   dark recesses for the screen, cassette window, and keys. The palette is
+   greys with the badge red as the only emphasis; the badge stripe and the
+   number-row colour names are kept as printed on the machine. Each page sets
+   --side, the width of the desk columns beside the TV, and places the parts
+   with grid areas. */
 :root {
     color-scheme: dark;
     --side: 290px;
@@ -474,16 +475,26 @@ body:has(#screen-slot.screen-only) :is(.tv-slot, .tv) {
     background: linear-gradient(90deg, #151515, #262626 50%, #151515);
     box-shadow: inset 0 1px 3px #000;
 }
-/* Tape wound on both hubs, seen through the window */
+/* Tape wound on both cassette hubs, seen through the window, each hub turning
+   on one of the deck's spindles */
 .reel {
-    display: block;
+    display: grid;
+    place-items: center;
     width: 30px;
     height: 30px;
     border-radius: 50%;
+    background: radial-gradient(circle, transparent 0 7.5px, #E4E4E4 8px 9.5px, #A8A8A8 10.5px, #0C0C0C 11px);
+}
+/* The deck's drive spindle, the same with or without a tape: a shaft with six
+   keys */
+.reel::before {
+    content: "";
+    width: 15px;
+    height: 15px;
+    border-radius: 50%;
     background:
-        radial-gradient(circle, #111 0 4px, transparent 4.5px),
-        conic-gradient(#E4E4E4 0 8%, #9A9A9A 0 25%, #E4E4E4 0 33%, #9A9A9A 0 58%, #E4E4E4 0 66%, #9A9A9A 0 91%, #E4E4E4 0) center / 18px 18px no-repeat,
-        radial-gradient(circle, transparent 9px, #0C0C0C 9.5px);
+        radial-gradient(circle, #D6D6D6 0 2.5px, #7A7A7A 3px 3.5px, transparent 4px),
+        repeating-conic-gradient(#A8A8A8 0 18deg, #1A1A1A 18deg 60deg);
 }
 /* The tape is wound on the left hub until it has played out. */
 .reel:first-child,
@@ -496,8 +507,15 @@ body:has(#screen-slot.screen-only) :is(.tv-slot, .tv) {
 .recorder[data-state="playing"] .reel {
     animation: spin 1.6s linear infinite;
 }
+/* With no tape the well is empty but for the two spindles, each with the collar
+   at its foot that the hub would cover. */
 .recorder[data-state="empty"] .cassette {
     visibility: hidden;
+}
+.recorder[data-state="empty"] .reel {
+    visibility: visible;
+    box-shadow: none;
+    background: radial-gradient(circle, transparent 0 7.5px, #0C0C0C 8px 8.5px, #3C3C3C 9px 11.5px, transparent 12px);
 }
 @media (prefers-reduced-motion: reduce) {
     .recorder[data-state="playing"] .reel {
@@ -658,10 +676,6 @@ a.kc:hover {
     outline: 2px solid var(--red);
     outline-offset: 2px;
 }
-.kc.sm {
-    min-width: 54px;
-    height: 32px;
-}
 .kc .led {
     position: absolute;
     top: 5px;
@@ -801,7 +815,7 @@ body:has(#keyboard-toggle:checked) .grille {
     box-shadow: inset 0 1px 2px #0000004D;
     translate: -50% 0;
 }
-.door-label {
+.case-label {
     display: flex;
     justify-content: space-between;
     color: #3A3A3A;
@@ -1082,6 +1096,14 @@ body:has(#keyboard-toggle:not(:checked)) .ports {
 .k .cap.sym {
     background: var(--ink);
     color: #F2F2F2;
+}
+/* The one black cap mirrors the white ones: lighter on hover, white while held. */
+.k.hover .cap.sym {
+    background: linear-gradient(#3C3C3C, #262626);
+}
+.k.on .cap.sym {
+    background: var(--key);
+    color: var(--ink);
 }
 .k .cap.bar {
     margin-bottom: calc(var(--u) * 0.1);

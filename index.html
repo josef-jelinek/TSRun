@@ -10,15 +10,33 @@
 body {
     grid-template-areas: ". tv deck" "case case case";
 }
-/* The ROM sockets under a hatch, mirroring the dock door on the right */
-.rom-hatch {
+/* The ROMs are part of the machine, so unlike the cartridge behind the dock
+   door they are seen through an opening cut into the case: the board inside,
+   with each chip in its socket, and the keys that replace them below. */
+.rom {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
     max-width: 300px;
 }
-.socket {
+/* The case wall shades the top of the opening and light catches its lower lip;
+   faint lines on the board stand in for its traces. */
+.rom-bay {
     display: grid;
-    grid-template-columns: auto minmax(0, 1fr) auto;
+    gap: 6px;
+    padding: 10px 12px;
+    border-radius: 4px;
+    background:
+        repeating-linear-gradient(90deg, transparent 0 17px, #FFFFFF0A 17px 18px),
+        repeating-linear-gradient(transparent 0 23px, #FFFFFF08 23px 24px),
+        #2A2A2A;
+    box-shadow: inset 0 4px 8px #000000B3, inset 0 0 0 1px #0000008C, 0 1px 0 #FFFFFFB3;
+}
+.rom-chip {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
     align-items: center;
-    gap: 10px;
+    gap: 14px;
 }
 /* A DIP package: notch on the left, pins on both long sides */
 .dip {
@@ -60,39 +78,52 @@ body {
 .dip::after {
     bottom: -4px;
 }
-.socket .media-info {
+/* The socket around the chip, wide enough to take its pins */
+.rom-chip .dip {
+    margin: 7px;
+    box-shadow: 0 2px 3px #00000099, 0 0 0 6px #505050, 0 0 0 7px #161616;
+}
+.rom-chip .media-info {
     overflow: hidden;
-    color: var(--print);
+    color: var(--label);
     font-size: 11.5px;
     text-overflow: ellipsis;
     white-space: nowrap;
 }
-.dock-keys {
+.dock-keys,
+.rom-keys {
     display: flex;
     gap: 8px;
 }
-.dock-keys .kc {
+.dock-keys .kc,
+.rom-keys .kc {
     flex: 1;
 }
-/* The two joystick sockets on the case sides, one per host gamepad */
-/* The folded strip: machine keys over the badge stripe, then the ROM hatch
-   with its sockets side by side, the grille, and the dock with its keys
-   stacked. */
+/* The folded strip: machine keys over the badge stripe, then the ROM opening
+   with its chips side by side and its keys stacked beside it, the grille, and
+   the dock with its keys stacked the same way. */
 body:has(#keyboard-toggle:not(:checked)) .case {
     grid-template-columns: auto auto minmax(0, 1fr) auto;
     grid-template-areas: "fn rom grille dock" "brand rom grille dock";
 }
-body:has(#keyboard-toggle:not(:checked)) .rom-hatch {
+body:has(#keyboard-toggle:not(:checked)) .rom {
     grid-area: rom;
     display: grid;
     grid-template-columns: auto auto;
-    gap: 10px 22px;
+    align-items: center;
+    gap: 6px 14px;
     max-width: none;
 }
-body:has(#keyboard-toggle:not(:checked)) .rom-hatch .door-label {
-    grid-column: 1 / -1;
+body:has(#keyboard-toggle:not(:checked)) .rom-bay {
+    grid-template-columns: auto auto;
+    column-gap: 22px;
 }
-body:has(#keyboard-toggle:not(:checked)) .dock-keys {
+body:has(#keyboard-toggle:not(:checked)) .rom-keys {
+    grid-column: 2;
+    grid-row: 1 / 3;
+}
+body:has(#keyboard-toggle:not(:checked)) .dock-keys,
+body:has(#keyboard-toggle:not(:checked)) .rom-keys {
     flex-direction: column;
     width: 84px;
 }
@@ -109,7 +140,7 @@ body:has(#keyboard-toggle:not(:checked)) .dock-keys {
     body:has(#keyboard-toggle:not(:checked)) .grille {
         display: none;
     }
-    body:has(#keyboard-toggle:not(:checked)) .rom-hatch,
+    body:has(#keyboard-toggle:not(:checked)) .rom,
     body:has(#keyboard-toggle:not(:checked)) .dock {
         justify-self: end;
     }
@@ -122,10 +153,10 @@ body:has(#keyboard-toggle:not(:checked)) .dock-keys {
         grid-template-columns: minmax(0, 1fr);
         grid-template-areas: "fn" "rom" "dock" "brand";
     }
-    body:has(#keyboard-toggle:not(:checked)) .rom-hatch {
+    body:has(#keyboard-toggle:not(:checked)) .rom-bay {
         grid-template-columns: auto;
     }
-    body:has(#keyboard-toggle:not(:checked)) .rom-hatch,
+    body:has(#keyboard-toggle:not(:checked)) .rom,
     body:has(#keyboard-toggle:not(:checked)) .dock {
         justify-self: start;
     }
@@ -210,18 +241,22 @@ body:has(#keyboard-toggle:not(:checked)) .dock-keys {
             <button id="nmi" class="kc" title="Non-maskable interrupt"><b>NMI</b><small>PC 0066</small></button>
             <label class="kc" title="Onscreen keyboard (F1)"><input id="keyboard-toggle" type="checkbox"><b>KEYS</b><i class="led"></i><small>F1</small></label>
         </div>
-        <div class="door rom-hatch" aria-label="ROMs">
-            <div class="door-label"><span>ROM</span><span>LOAD RESETS</span></div>
-            <div class="socket">
-                <div class="dip">HOME<small>16K</small></div>
-                <div id="rom0-info" class="media-info">No HOME ROM file</div>
-                <button id="load-rom0" class="kc sm" title="Set the 16K HOME ROM"><b>LOAD</b><small>ROM0</small></button>
-                <input id="file-rom0" type="file" accept=".rom, .bin" style="display: none">
+        <div class="rom">
+            <div class="case-label"><span>ROM</span><span>LOAD RESETS</span></div>
+            <div class="rom-bay" aria-label="ROMs">
+                <div class="rom-chip">
+                    <div class="dip">HOME<small>16K</small></div>
+                    <div id="rom0-info" class="media-info">No HOME ROM file</div>
+                </div>
+                <div class="rom-chip">
+                    <div class="dip">EXROM<small>8K</small></div>
+                    <div id="rom1-info" class="media-info">No EXROM file</div>
+                </div>
             </div>
-            <div class="socket">
-                <div class="dip">EXROM<small>8K</small></div>
-                <div id="rom1-info" class="media-info">No EXROM file</div>
-                <button id="load-rom1" class="kc sm" title="Set the 8K EXROM"><b>LOAD</b><small>ROM1</small></button>
+            <div class="rom-keys">
+                <button id="load-rom0" class="kc" title="Set the 16K HOME ROM"><b>LOAD</b><small>ROM0</small></button>
+                <input id="file-rom0" type="file" accept=".rom, .bin" style="display: none">
+                <button id="load-rom1" class="kc" title="Set the 8K EXROM"><b>LOAD</b><small>ROM1</small></button>
                 <input id="file-rom1" type="file" accept=".rom, .bin" style="display: none">
             </div>
         </div>
@@ -238,7 +273,7 @@ body:has(#keyboard-toggle:not(:checked)) .dock-keys {
 
     <div class="dock">
         <div class="door">
-            <div class="door-label"><span>DOCK</span><span>LROS · AROS</span></div>
+            <div class="case-label"><span>DOCK</span><span>LROS · AROS</span></div>
             <div class="slot"><div id="cart-info" class="media-info">No cartridge.</div></div>
         </div>
         <div class="dock-keys">

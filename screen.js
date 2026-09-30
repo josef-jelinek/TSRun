@@ -4,17 +4,65 @@ const frameH = 240;
 const viewW = 640;
 const viewH = 480;
 
-// The camcorder-style caption shown while paused: PAUSE in a 5x7 dot font,
+// The camcorder-style caption shown while paused: PAUSE in a 6x7 dot font,
 // then the two pause bars. "#" is a dot, rows run top to bottom, and a glyph
 // of spaces is a gap.
 const pauseCaption = [
-    ["#### ", "#   #", "#   #", "#### ", "#    ", "#    ", "#    "],
-    [" ### ", "#   #", "#   #", "#####", "#   #", "#   #", "#   #"],
-    ["#   #", "#   #", "#   #", "#   #", "#   #", "#   #", " ### "],
-    [" ####", "#    ", "#    ", " ### ", "    #", "    #", "#### "],
-    ["#####", "#    ", "#    ", "#### ", "#    ", "#    ", "#####"],
-    ["  ", "  ", "  ", "  ", "  ", "  ", "  "],
-    ["##  ##", "##  ##", "##  ##", "##  ##", "##  ##", "##  ##", "##  ##"],
+    [
+        "##### ",
+        "#    #",
+        "#    #",
+        "##### ",
+        "#     ",
+        "#     ",
+        "#     ",
+    ],
+    [
+        " #### ",
+        "#    #",
+        "#    #",
+        "######",
+        "#    #",
+        "#    #",
+        "#    #",
+    ],
+    [
+        "#    #",
+        "#    #",
+        "#    #",
+        "#    #",
+        "#    #",
+        "#    #",
+        " #### ",
+    ],
+    [
+        " #### ",
+        "#    #",
+        "#     ",
+        " #### ",
+        "     #",
+        "#    #",
+        " #### ",
+    ],
+    [
+        "######",
+        "#     ",
+        "#     ",
+        "##### ",
+        "#     ",
+        "#     ",
+        "######",
+    ],
+    ["   ", "   ", "   ", "   ", "   ", "   ", "   "],
+    [
+        "##   ##",
+        "##   ##",
+        "##   ##",
+        "##   ##",
+        "##   ##",
+        "##   ##",
+        "##   ##",
+    ],
 ];
 // Each dot is 1 pixel wide (2 hi-res frame columns) and 1 line tall, and the
 // caption with its edge fits in the 24-line top border, clear of the active
@@ -23,7 +71,7 @@ const dotCols = 2;
 const dotRows = 1;
 const captionX = 40;
 const captionY = 8;
-const captionInk = 15;
+const captionInk = 12;
 const captionEdge = 0;
 const pauseDots = captionDots(pauseCaption);
 
@@ -163,8 +211,9 @@ export function drawScreen(gfx, pixels) {
 
 /**
  * Draw the paused caption into a frame the way a camcorder lays it over the
- * picture: white dots with a black edge. It goes into the pixels rather than
- * over the canvas, so the display filter treats it like the rest of the image.
+ * picture: bright green dots with a black edge. It goes into the pixels rather
+ * than over the canvas, so the display filter treats it like the rest of the
+ * image.
  *
  * @param {Uint8Array} pixels one palette index per pixel, frameW by frameH
  */
@@ -172,7 +221,7 @@ export function stampPause(pixels) {
     for (let i = 0; i < pauseDots.length; i += 2) {
         const col = captionX + pauseDots[i] * dotCols;
         const row = captionY + pauseDots[i + 1] * dotRows;
-        fillRect(pixels, col - 2, row - 1, dotCols + 4, dotRows + 2, captionEdge);
+        fillRect(pixels, col - 4, row - 2, dotCols + 8, dotRows + 4, captionEdge);
     }
     for (let i = 0; i < pauseDots.length; i += 2) {
         const col = captionX + pauseDots[i] * dotCols;
