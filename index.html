@@ -222,13 +222,13 @@ body:has(#keyboard-toggle:not(:checked)) .rom-keys {
         </div>
         <div id="tape-info" class="media-info">No tape</div>
         <div class="piano">
-            <button id="load-tape" class="pk" title="Insert a .tap or .tzx tape"><svg class="i"><use href="#i-eject"></use></svg>Load</button>
+            <button id="load-tape" class="pk" title="Insert a .tap or .tzx tape"><span class="cap"><svg class="i"><use href="#i-eject"></use></svg></span>Load</button>
             <input id="file-tape" type="file" accept=".tap,.tzx" style="display: none">
-            <button id="rew-tape" class="pk" title="Rewind to the start of this block, or to the previous block" disabled><svg class="i"><use href="#i-rew"></use></svg>Rew</button>
-            <button id="play-tape" class="pk" title="Start or resume tape playback" disabled><svg class="i"><use href="#i-play"></use></svg><span id="play-tape-label">Play</span></button>
-            <button id="ff-tape" class="pk" title="Fast-forward past the next block" disabled><svg class="i"><use href="#i-ff"></use></svg>FF</button>
-            <label class="pk" title="Start selected tapes with the bundled TS2068 ROM loader"><input id="auto" type="checkbox" checked><i class="led"></i>Auto</label>
-            <label class="pk" title="Run many times faster than real time while the tape plays"><input id="turbo" type="checkbox" checked><i class="led"></i>Turbo</label>
+            <button id="rew-tape" class="pk" title="Rewind to the start of this block, or to the previous block" disabled><span class="cap"><svg class="i"><use href="#i-rew"></use></svg></span>Rew</button>
+            <button id="play-tape" class="pk" title="Start or resume tape playback" disabled><span class="cap"><svg class="i"><use href="#i-play"></use></svg></span><span id="play-tape-label">Play</span></button>
+            <button id="ff-tape" class="pk" title="Fast-forward past the next block" disabled><span class="cap"><svg class="i"><use href="#i-ff"></use></svg></span>FF</button>
+            <label class="pk" title="Start selected tapes with the bundled TS2068 ROM loader"><input id="auto" type="checkbox" checked><span class="cap"><i class="led"></i></span>Auto</label>
+            <label class="pk" title="Run many times faster than real time while the tape plays"><input id="turbo" type="checkbox" checked><span class="cap"><i class="led"></i></span>Turbo</label>
         </div>
     </section>
 </aside>

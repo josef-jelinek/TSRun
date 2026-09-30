@@ -565,13 +565,25 @@ body:has(#screen-slot.screen-only) :is(.tv-slot, .tv) {
     color: var(--print);
     font-size: 12px;
 }
-/* Piano keys: latching ones stay down while their switch is on */
+/* Piano keys: square caps in a dark well, each carrying only its icon or LED,
+   with the name printed on the body below. Latching ones stay down while their
+   switch is on. The keys shrink to fit the recorder but never grow past 46px,
+   so a wider recorder centers the row instead. */
 .piano {
+    position: relative;
     display: grid;
-    grid-auto-columns: minmax(0, 1fr);
+    grid-auto-columns: minmax(0, 46px);
     grid-auto-flow: column;
     gap: 4px;
-    padding: 6px 5px 3px;
+    width: fit-content;
+    margin: 0 auto;
+    padding: 6px 5px 0;
+}
+/* The well stops above the names: 5px of body under it, then their 11px line. */
+.piano::before {
+    content: "";
+    position: absolute;
+    inset: 0 0 16px;
     border-radius: 5px;
     background: #0B0B0B;
     box-shadow: inset 0 2px 4px #000, 0 1px 0 #FFFFFFB3;
@@ -580,44 +592,54 @@ body:has(#screen-slot.screen-only) :is(.tv-slot, .tv) {
     position: relative;
     display: flex;
     flex-direction: column;
-    align-items: center;
-    justify-content: flex-end;
-    gap: 5px;
-    height: 50px;
-    padding: 0 0 8px;
+    gap: 8px;
+    min-width: 0;
+    padding: 0;
     border: 0;
+    background: none;
+    color: var(--print-2);
+    font-size: 9px;
+    font-weight: 700;
+    line-height: 11px;
+    letter-spacing: 0.12em;
+    text-align: center;
+    text-transform: uppercase;
+    white-space: nowrap;
+    cursor: pointer;
+}
+.pk .cap {
+    display: grid;
+    place-items: center;
+    aspect-ratio: 1;
     border-radius: 2px 2px 5px 5px;
     background: linear-gradient(#EDEDED, #C2C2C2 65%, #A5A5A5);
     box-shadow: inset 0 1px 0 #FFF, 0 5px 0 #5E5E5E;
     color: var(--ink);
-    font-size: 9px;
-    font-weight: 700;
-    letter-spacing: 0.12em;
-    text-transform: uppercase;
     transform: translateY(-4px);
-    cursor: pointer;
 }
-.pk .led {
-    position: absolute;
-    top: 7px;
-    left: 50%;
-    translate: -50% 0;
+.pk svg.i {
+    width: 14px;
+    height: 14px;
 }
-.pk:hover {
+.pk:hover .cap {
     background: linear-gradient(#FFF, #CFCFCF 65%, #AFAFAF);
 }
-.pk:active,
-.pk:has(> input:checked) {
+.pk:active .cap,
+.pk:has(> input:checked) .cap {
     background: linear-gradient(#D2D2D2, #ADADAD);
     box-shadow: inset 0 1px 0 #EEE, 0 1px 0 #5E5E5E;
     transform: translateY(0);
 }
-.pk:disabled {
+.pk:disabled,
+.pk:disabled .cap {
     color: #0000004D;
     cursor: default;
 }
-.pk:focus-visible,
-.pk:has(> input:focus-visible) {
+.pk:focus-visible {
+    outline: 0;
+}
+.pk:focus-visible .cap,
+.pk:has(> input:focus-visible) .cap {
     outline: 2px solid var(--red);
     outline-offset: 2px;
 }
@@ -1204,8 +1226,8 @@ body:has(#keyboard-toggle:not(:checked)) .ports {
     .transport {
         margin: 8px 0;
     }
-    .pk {
-        height: 42px;
+    .piano {
+        grid-auto-columns: minmax(0, 40px);
     }
 }
 /* Narrow windows scroll: the TV gets a fixed height and each page stacks
