@@ -240,6 +240,28 @@ export function setSoundStereo(sfx, on) {
 }
 
 /**
+ * Silence or restore the output. The machine keeps running and the audio queue
+ * keeps draining, so the emulation speed does not change.
+ *
+ * @param {Sfx} sfx
+ * @param {boolean} on
+ */
+export function setSoundMuted(sfx, on) {
+    sfx.node.port.postMessage({type: "mute", on});
+}
+
+/**
+ * Tell the audio thread the machine has stopped on purpose, so the queue
+ * running dry meanwhile is not reported as a gap.
+ *
+ * @param {Sfx} sfx
+ * @param {boolean} on
+ */
+export function setSoundPaused(sfx, on) {
+    sfx.node.port.postMessage({type: "pause", on});
+}
+
+/**
  * One frame of mixed planes the worklet will interleave, exactly as takeAudio
  * hands it over. Aliased rather than copied so the shape stays checked against
  * its producer. This is a type-only import and pulls in no code.

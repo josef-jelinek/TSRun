@@ -1,5 +1,4 @@
 import {
-    insertTape,
     insertDock,
     ejectDock,
     cartInfo,
@@ -25,37 +24,64 @@ import {
     showError,
     showInfo,
     resetSystem,
-    refreshTapeStatus,
+    loadTape,
+    refreshCartStatus,
     autoloadTapeIfEnabled,
-    resizeHost,
 } from "./host.js";
 
 /**
+ * A listing row: what it shows, what activating it does, and the name it acts
+ * on. `size` is the formatted size, or "" for rows without one.
+ *
  * @typedef {{
  *   label: string,
+ *   size: string,
  *   action: "up" | "letter" | "zip" | "file",
  *   name: string,
  * }} BrowserRow
  */
 
+// The narrowest the catalog grip makes the catalog, which is the recorder's
+// width so the column across from it still holds the recorder, and what the
+// grip leaves the TV.
+const minCatalogWidth = 290;
+const minTvWidth = 320;
+
 const ui = {
-    pageHeader:       /** @type {HTMLElement} */       (document.getElementById("page-header")),
+    catalog:          /** @type {HTMLElement} */       (document.getElementById("catalog")),
     archivePathDir:   /** @type {HTMLElement} */       (document.getElementById("archive-path-dir")),
     archivePathFile:  /** @type {HTMLElement} */       (document.getElementById("archive-path-file")),
-    downloadFile:     /** @type {HTMLButtonElement} */ (document.getElementById("download-file")),
+    archiveInfo:      /** @type {HTMLElement} */       (document.getElementById("archive-info")),
+    loadFile:         /** @type {HTMLButtonElement} */ (document.getElementById("load-file")),
+    loadFileVerb:     /** @type {HTMLElement} */       (document.getElementById("load-file-verb")),
+    loadFileKind:     /** @type {HTMLElement} */       (document.getElementById("load-file-kind")),
+    saveFile:         /** @type {HTMLButtonElement} */ (document.getElementById("save-file")),
     tsrunLink:        /** @type {HTMLAnchorElement} */ (document.getElementById("tsrun-link")),
-    archivePane:      /** @type {HTMLElement} */       (document.getElementById("archive-pane")),
     archiveQuery:     /** @type {HTMLInputElement} */  (document.getElementById("archive-query")),
     ts2068:           /** @type {HTMLInputElement} */  (document.getElementById("ts2068")),
     archiveList:      /** @type {HTMLElement} */       (document.getElementById("archive-list")),
     split:            /** @type {HTMLElement} */       (document.getElementById("split")),
-    options:          /** @type {HTMLElement} */       (document.getElementById("options")),
-    status:           /** @type {HTMLElement} */       (document.getElementById("status")),
     initInfo:         /** @type {HTMLElement} */       (document.getElementById("init-info")),
     soundInfo:        /** @type {HTMLElement} */       (document.getElementById("sound-info")),
+    paused:           /** @type {HTMLInputElement} */  (document.getElementById("paused")),
     tapeInfo:         /** @type {HTMLElement} */       (document.getElementById("tape-info")),
     auto:             /** @type {HTMLInputElement} */  (document.getElementById("auto")),
     playTape:         /** @type {HTMLButtonElement} */ (document.getElementById("play-tape")),
+    rewTape:          /** @type {HTMLButtonElement} */ (document.getElementById("rew-tape")),
+    ffTape:           /** @type {HTMLButtonElement} */ (document.getElementById("ff-tape")),
+    playTapeLabel:    /** @type {HTMLElement} */       (document.getElementById("play-tape-label")),
+    recorder:         /** @type {HTMLElement} */       (document.getElementById("recorder")),
+    tapeLabel:        /** @type {HTMLElement} */       (document.getElementById("tape-label")),
+    tapeCounter:      /** @type {HTMLElement} */       (document.getElementById("tape-counter")),
+    tapeTotal:        /** @type {HTMLElement} */       (document.getElementById("tape-total")),
+    printout:         /** @type {HTMLElement} */       (document.getElementById("printout")),
+    printoutName:     /** @type {HTMLElement} */       (document.getElementById("printout-name")),
+    printoutSummary:  /** @type {HTMLElement} */       (document.getElementById("printout-summary")),
+    printoutRows:     /** @type {HTMLElement} */       (document.getElementById("printout-rows")),
+    tapeBlocks:       /** @type {HTMLTableSectionElement} */ (document.getElementById("tape-blocks")),
+    cartInfo:         /** @type {HTMLElement} */       (document.getElementById("cart-info")),
+    joy1Info:         /** @type {HTMLElement} */       (document.getElementById("joy1-info")),
+    joy2Info:         /** @type {HTMLElement} */       (document.getElementById("joy2-info")),
     reset:            /** @type {HTMLButtonElement} */ (document.getElementById("reset")),
     screenSlot:       /** @type {HTMLElement} */       (document.getElementById("screen-slot")),
     screen:           /** @type {HTMLCanvasElement} */ (document.getElementById("screen")),
@@ -64,6 +90,7 @@ const ui = {
     keyboardToggle:   /** @type {HTMLInputElement} */  (document.getElementById("keyboard-toggle")),
     crt:              /** @type {HTMLInputElement} */  (document.getElementById("crt")),
     stereo:           /** @type {HTMLInputElement} */  (document.getElementById("stereo")),
+    muted:            /** @type {HTMLInputElement} */  (document.getElementById("muted")),
     fullscreenToggle: /** @type {HTMLButtonElement} */ (document.getElementById("fullscreen-toggle")),
     turbo:            /** @type {HTMLInputElement} */  (document.getElementById("turbo")),
 };
@@ -107,8 +134,6 @@ const browser = {
 
 const host = createHost(ui, {
     query,
-    chrome: [ui.archivePane, ui.split, ui.options, ui.status],
-    screenOnlyClass: true,
     onKeyDown: function (e) {
         if (!host.screenOnly && document.activeElement === ui.archiveList) {
             if (isListNavKey(e.code)) {
@@ -149,16 +174,6 @@ const host = createHost(ui, {
         }
         return false;
     },
-    onResize: function () {
-        const workspace = ui.archivePane.parentElement;
-        if (workspace !== null) {
-            if (getComputedStyle(workspace).flexDirection === "column") {
-                ui.archivePane.style.width = "";
-            } else {
-                ui.archivePane.style.height = "";
-            }
-        }
-    },
     onScreenOnly: function (on) {
         if (on) {
             ui.screen.focus();
@@ -168,8 +183,14 @@ const host = createHost(ui, {
 
 applySwitchParamValue(ui.ts2068, query.get("ts2068") ?? "");
 
-ui.downloadFile.onclick = function () {
-    downloadCursorFile();
+ui.loadFile.onclick = function () {
+    activateRow();
+    ui.archiveList.focus();
+};
+
+ui.saveFile.onclick = function () {
+    saveCursorFile();
+    ui.archiveList.focus();
 };
 
 ui.archiveQuery.oninput = function () {
@@ -180,14 +201,15 @@ ui.ts2068.onchange = function () {
     applyArchiveFilter();
 };
 
-ui.options.onclick = function (/** @type {MouseEvent} */ e) {
-    let el = /** @type {HTMLElement | null} */ (e.target);
-    while (el !== null && el !== ui.options) {
-        if (el === ui.tsrunLink || el.tagName === "BUTTON" || el.classList.contains("switch")) {
-            ui.screen.focus();
-            return;
-        }
-        el = el.parentElement;
+// A click on a TV, recorder, or case control hands the keys back to the
+// emulator; the catalog keeps its own focus.
+document.onclick = function (/** @type {MouseEvent} */ e) {
+    const target = e.target;
+    if (!(target instanceof Element) || ui.catalog.contains(target)) {
+        return;
+    }
+    if (target.closest(".tv-btn, .pk, .kc") !== null) {
+        ui.screen.focus();
     }
 };
 
@@ -206,14 +228,14 @@ ui.split.onpointerdown = function (/** @type {PointerEvent} */ e) {
     e.preventDefault();
     ui.split.setPointerCapture(e.pointerId);
     document.body.classList.add("splitting");
-    applySplitSize(e.clientX, e.clientY);
+    applySplitSize(e.clientX);
 };
 
 ui.split.onpointermove = function (/** @type {PointerEvent} */ e) {
     if (!ui.split.hasPointerCapture(e.pointerId)) {
         return;
     }
-    applySplitSize(e.clientX, e.clientY);
+    applySplitSize(e.clientX);
 };
 
 ui.split.onpointerup = function (/** @type {PointerEvent} */ e) {
@@ -259,7 +281,7 @@ showListMessage("Loading...");
 fetchArchiveIndex(function (err, files) {
     if (err !== null) {
         showListMessage(err);
-        showError(ui.tapeInfo, err);
+        showError(ui.archiveInfo, err);
         return;
     }
     if (files === null) {
@@ -274,37 +296,28 @@ fetchArchiveIndex(function (err, files) {
 });
 
 /**
+ * Set the catalog width from the grip on its right edge. Both desk columns take
+ * the width, so the TV stays centred over the keyboard; the TV keeps at least
+ * minTvWidth. The layout change refits the screen through its observer.
+ *
  * @param {number} pointerX
- * @param {number} pointerY
  */
-function applySplitSize(pointerX, pointerY) {
-    const workspace = ui.archivePane.parentElement;
-    if (workspace === null) {
-        return;
+function applySplitSize(pointerX) {
+    const style = getComputedStyle(document.body);
+    const padX = Number.parseFloat(style.paddingLeft) + Number.parseFloat(style.paddingRight);
+    const gap = Number.parseFloat(style.columnGap);
+    let content = document.body.clientWidth;
+    if (Number.isFinite(padX)) {
+        content -= padX;
     }
-    const rect = workspace.getBoundingClientRect();
-    const splitRect = ui.split.getBoundingClientRect();
-    const column = getComputedStyle(workspace).flexDirection === "column";
-    let size = pointerX - rect.left;
-    let max = rect.width - splitRect.width - 160;
-    if (column) {
-        size = pointerY - rect.top;
-        max = rect.height - splitRect.height - 80;
-        document.body.style.cursor = "row-resize";
-    } else {
-        document.body.style.cursor = "col-resize";
+    if (Number.isFinite(gap)) {
+        content -= 2 * gap;
     }
-    const min = 80;
-    size = Math.min(Math.max(size, min), Math.max(min, max));
-    ui.archivePane.style.flexBasis = size + "px";
-    if (column) {
-        ui.archivePane.style.height = size + "px";
-        ui.archivePane.style.width = "";
-    } else {
-        ui.archivePane.style.width = size + "px";
-        ui.archivePane.style.height = "";
-    }
-    resizeHost(host);
+    const max = (content - minTvWidth) / 2;
+    let size = pointerX - ui.catalog.getBoundingClientRect().left;
+    size = Math.min(Math.max(size, minCatalogWidth), Math.max(minCatalogWidth, max));
+    document.body.style.setProperty("--side", size + "px");
+    document.body.style.cursor = "col-resize";
 }
 
 /** @param {number} pointerId */
@@ -338,13 +351,14 @@ function renderList() {
     const zips = matchingZips();
     const searching = ui.archiveQuery.value !== "";
     if (browser.level === "zip" || (browser.level === "letter" && !searching)) {
-        items.push({label: "..", action: "up", name: ""});
+        items.push({label: "..", size: "", action: "up", name: ""});
     }
     if (browser.level === "zip") {
         for (let i = 0; i < browser.zipFiles.length; i += 1) {
             const f = browser.zipFiles[i];
             items.push({
-                label: f.name + " (" + formatSize(f.size) + ")",
+                label: f.name,
+                size: formatSize(f.size),
                 action: "file",
                 name: f.name,
             });
@@ -353,7 +367,8 @@ function renderList() {
         for (let i = 0; i < zips.length; i += 1) {
             const z = zips[i];
             items.push({
-                label: z.name + " (" + formatSize(z.size) + ")",
+                label: z.name,
+                size: formatSize(z.size),
                 action: "zip",
                 name: z.name,
             });
@@ -365,6 +380,7 @@ function renderList() {
             for (let i = 0; i < letters.length; i += 1) {
                 items.push({
                     label: "[ " + letters[i] + " ]",
+                    size: "",
                     action: "letter",
                     name: letters[i],
                 });
@@ -376,7 +392,8 @@ function renderList() {
             for (let i = 0; i < letterZips.length; i += 1) {
                 const z = letterZips[i];
                 items.push({
-                    label: z.name + " (" + formatSize(z.size) + ")",
+                    label: z.name,
+                    size: formatSize(z.size),
                     action: "zip",
                     name: z.name,
                 });
@@ -396,25 +413,23 @@ function renderList() {
 
     ui.archiveList.replaceChildren();
     for (let i = 0; i < items.length; i += 1) {
-        const row = document.createElement("div");
-        row.className = "archive-row";
+        const item = items[i];
+        /** @type {"" | "path"} */
+        let rowClass = "";
+        if (item.action === "file") {
+            rowClass = "path";
+        }
+        const row = makeRow(item.label, item.size, rowClass);
         row.dataset.index = String(i);
-        row.textContent = items[i].label;
-        if (items[i].action === "file" && (isTapeName(items[i].name) || isCartName(items[i].name))) {
+        if (item.action === "file" && (isTapeName(item.name) || isCartName(item.name))) {
             row.classList.add("media");
         }
         ui.archiveList.appendChild(row);
     }
     if (browser.abortListing !== null) {
-        const row = document.createElement("div");
-        row.className = "archive-row";
-        row.textContent = "Loading...";
-        ui.archiveList.appendChild(row);
+        ui.archiveList.appendChild(makeRow("Loading...", "", "note"));
     } else if (items.length === 0) {
-        const row = document.createElement("div");
-        row.className = "archive-row";
-        row.textContent = "No files.";
-        ui.archiveList.appendChild(row);
+        ui.archiveList.appendChild(makeRow("No files.", "", "note"));
     }
     paintSelection();
     scrollCursorIntoView();
@@ -434,14 +449,18 @@ function paintSelection() {
 }
 
 /**
- * Header path, Download, and Open in TSRun follow the list cursor, including
- * a highlighted row that has not been opened yet.
+ * Header path, Load, Save, and Open in TSRun follow the list cursor, including
+ * a highlighted row that has not been opened yet. The Load key names what it
+ * would do with that row, like Open zip or Load tzx, and is disabled on a
+ * file it cannot load.
  */
 function refreshPath() {
     let dir = "";
     let file = "";
     let media = false;
-    let canDownload = false;
+    let canSave = false;
+    let loadVerb = "LOAD";
+    let loadKind = "File";
     let zip = "";
     let member = "";
     let slash = -1;
@@ -449,11 +468,13 @@ function refreshPath() {
     if (item !== undefined) {
         switch (item.action) {
         case "up":
+            loadVerb = "OPEN";
+            loadKind = "Parent";
             switch (browser.level) {
             case "zip":
                 file = browser.zip;
                 zip = browser.zip;
-                canDownload = zip !== "";
+                canSave = zip !== "";
                 break;
             case "letter":
                 file = browser.letter;
@@ -462,11 +483,15 @@ function refreshPath() {
             break;
         case "letter":
             file = item.name;
+            loadVerb = "OPEN";
+            loadKind = "Group";
             break;
         case "zip":
             file = item.name;
             zip = item.name;
-            canDownload = true;
+            canSave = true;
+            loadVerb = "OPEN";
+            loadKind = "Zip";
             break;
         case "file":
             zip = browser.zip;
@@ -480,7 +505,10 @@ function refreshPath() {
                 file = member;
             }
             media = isTapeName(file) || isCartName(file);
-            canDownload = true;
+            canSave = true;
+            if (media) {
+                loadKind = file.slice(file.lastIndexOf(".") + 1).toLowerCase();
+            }
             break;
         }
     }
@@ -489,23 +517,21 @@ function refreshPath() {
     }
     ui.archivePathDir.textContent = dir;
     ui.archivePathFile.textContent = file;
+    ui.archivePathFile.classList.toggle("media", media);
     if (media) {
-        ui.archivePathFile.classList.add("media");
         ui.tsrunLink.href = "index.html?url=" + encodeURIComponent(zipUrl(zip) + "#" + member);
-        ui.tsrunLink.style.display = "";
+        ui.tsrunLink.removeAttribute("aria-disabled");
     } else {
-        ui.archivePathFile.classList.remove("media");
         ui.tsrunLink.removeAttribute("href");
-        ui.tsrunLink.style.display = "none";
+        ui.tsrunLink.setAttribute("aria-disabled", "true");
     }
-    if (canDownload) {
-        ui.downloadFile.style.display = "";
-    } else {
-        ui.downloadFile.style.display = "none";
-    }
+    ui.loadFileVerb.textContent = loadVerb;
+    ui.loadFileKind.textContent = loadKind;
+    ui.loadFile.disabled = loadVerb === "LOAD" && !media;
+    ui.saveFile.disabled = !canSave;
 }
 
-function downloadCursorFile() {
+function saveCursorFile() {
     const item = browser.items[browser.cursor];
     if (item === undefined) {
         return;
@@ -673,15 +699,16 @@ function openZip(zip) {
         }
         browser.abortListing = null;
         if (err !== null) {
-            showError(ui.tapeInfo, err);
+            showError(ui.archiveInfo, err);
             goUp();
             return;
         }
         if (files === null) {
-            showError(ui.tapeInfo, "No files in " + zip + ".");
+            showError(ui.archiveInfo, "No files in " + zip + ".");
             goUp();
             return;
         }
+        showInfo(ui.archiveInfo, "");
         browser.zipFiles = files;
         browser.cursor = 0;
         renderList();
@@ -697,22 +724,27 @@ function openZip(zip) {
  */
 function openFile(zip, name) {
     if (!isTapeName(name) && !isCartName(name)) {
-        showError(ui.tapeInfo, "\"" + name + "\" is not a TAP, TZX, or DCK.");
+        showError(ui.archiveInfo, "\"" + name + "\" is not a TAP, TZX, or DCK.");
         return;
     }
     if (browser.abortMember !== null) {
         browser.abortMember();
         browser.abortMember = null;
     }
-    showInfo(ui.tapeInfo, "Loading " + name + "...");
+    // Progress and errors show where the file is going: the recorder or the dock.
+    let infoEl = ui.tapeInfo;
+    if (isCartName(name)) {
+        infoEl = ui.cartInfo;
+    }
+    showInfo(infoEl, "Loading " + name + "...");
     browser.abortMember = fetchZipMember(zip, name, function (err, buf) {
         browser.abortMember = null;
         if (err !== null) {
-            showError(ui.tapeInfo, err);
+            showError(infoEl, err);
             return;
         }
         if (!(buf instanceof ArrayBuffer)) {
-            showError(ui.tapeInfo, "Could not load " + name + ".");
+            showError(infoEl, "Could not load " + name + ".");
             return;
         }
         rememberMemberBytes(zip, name, buf);
@@ -725,21 +757,20 @@ function openFile(zip, name) {
  * @param {ArrayBuffer} bytes
  */
 function applyArchiveFile(name, bytes) {
+    // The recorder and the dock show the file name without its folders.
+    const shortName = name.slice(name.lastIndexOf("/") + 1);
     if (isTapeName(name)) {
         const hadCart = cartInfo(host.machine).hasCart;
         ejectDock(host.machine);
-        const tapeErr = insertTape(host.machine, bytes);
-        if (tapeErr !== null) {
-            host.tapeName = "";
-            refreshTapeStatus(host, tapeErr);
+        if (hadCart) {
+            refreshCartStatus(host, "", null);
+        }
+        if (loadTape(host, shortName, bytes) !== null) {
             if (hadCart) {
                 resetSystem(host);
             }
             return;
         }
-        host.tapeName = name;
-        host.tapeState = "empty";
-        refreshTapeStatus(host, null);
         if (autoloadTapeIfEnabled(host)) {
             return;
         }
@@ -751,11 +782,11 @@ function applyArchiveFile(name, bytes) {
     if (isCartName(name)) {
         const dockErr = insertDock(host.machine, bytes);
         if (dockErr !== null) {
-            showError(ui.tapeInfo, dockErr);
+            refreshCartStatus(host, "", dockErr);
             return;
         }
         resetSystem(host);
-        showInfo(ui.tapeInfo, name);
+        refreshCartStatus(host, shortName, null);
         return;
     }
 }
@@ -844,11 +875,45 @@ function isSearchListNavKey(code) {
 
 /** @param {string} text */
 function showListMessage(text) {
-    ui.archiveList.replaceChildren();
+    ui.archiveList.replaceChildren(makeRow(text, "", "note"));
+}
+
+/**
+ * A listing row. A "path" row, a member inside a ZIP, lays out right to left
+ * so a long path is shortened at its start, keeping the file name in view; its
+ * folder reads dimmer than the name. A "note" row is a message and wraps. The
+ * inner span keeps the text itself left to right, and the size reads dimmer.
+ *
+ * @param {string} label
+ * @param {string} size
+ * @param {"" | "path" | "note"} rowClass
+ * @returns {HTMLElement}
+ */
+function makeRow(label, size, rowClass) {
     const row = document.createElement("div");
     row.className = "archive-row";
-    row.textContent = text;
-    ui.archiveList.appendChild(row);
+    if (rowClass !== "") {
+        row.classList.add(rowClass);
+    }
+    const text = document.createElement("span");
+    let name = label;
+    const slash = label.lastIndexOf("/");
+    if (rowClass === "path" && slash >= 0) {
+        const dir = document.createElement("span");
+        dir.className = "dir";
+        dir.textContent = label.slice(0, slash + 1);
+        text.appendChild(dir);
+        name = label.slice(slash + 1);
+    }
+    text.append(name);
+    if (size !== "") {
+        const sizeEl = document.createElement("span");
+        sizeEl.className = "size";
+        sizeEl.textContent = " (" + size + ")";
+        text.appendChild(sizeEl);
+    }
+    row.appendChild(text);
+    return row;
 }
 
 /**

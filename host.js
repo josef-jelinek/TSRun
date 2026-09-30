@@ -1,11 +1,15 @@
-import {initScreen, resizeScreen, setCrt, drawScreen} from "./screen.js";
+import {initScreen, resizeScreen, setCrt, drawScreen, stampPause} from "./screen.js";
 
 import {
     createMachine,
     resetMachine,
     runFrame,
     autoloadTape,
+    insertTape,
+    ejectTape,
     playTape,
+    rewindTape,
+    forwardTape,
     requestNmi,
     setVideoOn,
     enableSound,
@@ -13,6 +17,9 @@ import {
     takeAudio,
     tapeInfo,
     tapeState,
+    tapeListing,
+    tapeCursor,
+    cartInfo,
     setHomeRom,
     setExRom,
     cpuHz,
@@ -23,9 +30,9 @@ import {
 
 import {loadShaders, loadStartupRoms} from "./boot.js";
 
-import {initJoysticks, pollJoysticks} from "./joystick.js";
+import {initJoysticks, pollJoysticks, padLabel} from "./joystick.js";
 
-import {initKeyboard, handleKeyDown, handleKeyUp, handleBlur, scaleKeyboardFromY} from "./keyboard.js";
+import {initKeyboard, handleKeyDown, handleKeyUp, handleBlur, faceHeight, setFaceHeight} from "./keyboard.js";
 
 import {
     initSound,
@@ -33,6 +40,8 @@ import {
     resetSound,
     pushSound,
     setSoundStereo,
+    setSoundMuted,
+    setSoundPaused,
     setSoundNeedCallback,
     setSoundStateCallback,
     soundIsRunning,
@@ -53,18 +62,38 @@ const turboShownFrames = 4;
 // banking catch-up the machine would then sprint through.
 const carryFloorMs     = -4 * frameMs;
 const statsWindowMs    = 1000;
+// The keyboard grip can grow the board to this share of the window height.
+const keyboardMaxShare = 0.45;
 
 /**
- * Chrome both pages share. Optional `nmi` is bound when the page has that
- * button.
+ * Chrome both pages share: the TV, the recorder with its printout, and the
+ * case. `paused` is the TV's pause switch, which stops the machine while it is
+ * on. Optional `nmi` and `ejectCart` are bound when the page has them.
+ * `tapeCounter` holds three digit cells, `tapeBlocks` is the printout's table
+ * body, and `printoutRows` is the box it scrolls in.
  *
  * @typedef {{
- *   pageHeader:       HTMLElement,
  *   initInfo:         HTMLElement,
  *   soundInfo:        HTMLElement,
+ *   paused:           HTMLInputElement,
  *   auto:             HTMLInputElement,
  *   playTape:         HTMLButtonElement,
+ *   rewTape:          HTMLButtonElement,
+ *   ffTape:           HTMLButtonElement,
+ *   playTapeLabel:    HTMLElement,
  *   tapeInfo:         HTMLElement,
+ *   recorder:         HTMLElement,
+ *   tapeLabel:        HTMLElement,
+ *   tapeCounter:      HTMLElement,
+ *   tapeTotal:        HTMLElement,
+ *   printout:         HTMLElement,
+ *   printoutName:     HTMLElement,
+ *   printoutSummary:  HTMLElement,
+ *   printoutRows:     HTMLElement,
+ *   tapeBlocks:       HTMLTableSectionElement,
+ *   cartInfo:         HTMLElement,
+ *   joy1Info:         HTMLElement,
+ *   joy2Info:         HTMLElement,
  *   reset:            HTMLButtonElement,
  *   screenSlot:       HTMLElement,
  *   screen:           HTMLCanvasElement,
@@ -73,26 +102,24 @@ const statsWindowMs    = 1000;
  *   keyboardToggle:   HTMLInputElement,
  *   crt:              HTMLInputElement,
  *   stereo:           HTMLInputElement,
+ *   muted:            HTMLInputElement,
  *   fullscreenToggle: HTMLButtonElement,
  *   turbo:            HTMLInputElement,
  *   nmi?:             HTMLButtonElement,
+ *   ejectCart?:       HTMLButtonElement,
  * }} HostUi
  */
 
 /**
  * Page-specific host wiring. Callbacks that return true consume the event so
- * the emulator does not also see it. onResize runs before the screen is
- * fitted, so a page can drop a leftover split size when the workspace axis
- * changes. onRomsReady runs after the startup ROM fetch finishes, including
- * when it fails, so a page can apply a `?url=` file that arrived first.
+ * the emulator does not also see it. onRomsReady runs after the startup ROM
+ * fetch finishes, including when it fails, so a page can apply a `?url=` file
+ * that arrived first.
  *
  * @typedef {{
  *   query: URLSearchParams,
- *   chrome?: HTMLElement[],
- *   screenOnlyClass?: boolean,
  *   onKeyDown?: function(KeyboardEvent): boolean,
  *   onKeyUp?: function(KeyboardEvent): boolean,
- *   onResize?: function(): void,
  *   onScreenOnly?: function(boolean): void,
  *   onRomsReady?: function(): void,
  *   onRomSlot?: function(number, string, string | null): void,
@@ -100,14 +127,31 @@ const statsWindowMs    = 1000;
  */
 
 /**
+ * The session. `tapeState` and `tapeCursor` are what the recorder last showed,
+ * and `tapeDirty` forces a full repaint after a tape goes in or out.
+ * `blockRows` and `blockCells` are the printout's rows and state cells, with
+ * `blockStates` the state text each shows. `padIds` is what the joystick poll
+ * found this frame and `shownPadIds` what the ports show. `pausedFrame` is the
+ * last frame with the paused caption drawn in.
+ *
  * @typedef {{
  *   ui:                 HostUi,
  *   machine:            import("./machine.js").Machine,
+ *   pausedFrame:        Uint8Array,
  *   kbd:                import("./keyboard.js").Keyboard,
  *   gfx:                import("./screen.js").Gfx | null,
  *   sfx:                import("./sound.js").Sfx | null,
  *   tapeName:           string,
  *   tapeState:          import("./machine.js").TapeState,
+ *   tapeCursor:         number,
+ *   tapeDirty:          boolean,
+ *   blockRows:          HTMLElement[],
+ *   blockCells:         HTMLElement[],
+ *   blockStates:        string[],
+ *   padIds:             string[],
+ *   shownPadIds:        string[],
+ *   splitStartY:        number,
+ *   splitStartHeight:   number,
  *   frameId:            number | undefined,
  *   lastNow:            number,
  *   carryMs:            number,
@@ -120,21 +164,22 @@ const statsWindowMs    = 1000;
  *   abortLoadRoms:      (function(): void) | null,
  *   screenOnlyFallback: boolean,
  *   joystick:           Uint8Array,
- *   chrome:             HTMLElement[],
- *   screenOnlyClass:    boolean,
  *   onKeyDown:          (function(KeyboardEvent): boolean) | null,
  *   onKeyUp:            (function(KeyboardEvent): boolean) | null,
- *   onResize:           (function(): void) | null,
  *   onScreenOnly:       (function(boolean): void) | null,
  * }} Host
  */
 
 /**
+ * Show a status text. The title repeats it, since a narrow status line
+ * shortens it with an ellipsis.
+ *
  * @param {HTMLElement} el
  * @param {string} text
  */
 export function showInfo(el, text) {
     el.textContent = text;
+    el.title = text;
     el.classList.remove("error");
 }
 
@@ -144,6 +189,7 @@ export function showInfo(el, text) {
  */
 export function showError(el, text) {
     el.textContent = text;
+    el.title = text;
     el.classList.add("error");
 }
 
@@ -175,15 +221,6 @@ export function createHost(ui, options) {
     const joystick  = new Uint8Array(2);
     initJoysticks(joystick);
 
-    /** @type {HTMLElement[]} */
-    let chrome = [];
-    if (options.chrome !== undefined) {
-        chrome = options.chrome;
-    }
-    let screenOnlyClass = false;
-    if (options.screenOnlyClass !== undefined) {
-        screenOnlyClass = options.screenOnlyClass;
-    }
     /** @type {(function(KeyboardEvent): boolean) | null} */
     let onKeyDown = null;
     if (options.onKeyDown !== undefined) {
@@ -193,11 +230,6 @@ export function createHost(ui, options) {
     let onKeyUp = null;
     if (options.onKeyUp !== undefined) {
         onKeyUp = options.onKeyUp;
-    }
-    /** @type {(function(): void) | null} */
-    let onResize = null;
-    if (options.onResize !== undefined) {
-        onResize = options.onResize;
     }
     /** @type {(function(boolean): void) | null} */
     let onScreenOnly = null;
@@ -215,15 +247,26 @@ export function createHost(ui, options) {
         onRomSlot = options.onRomSlot;
     }
 
+    const machine = createMachine(keyMatrix, joystick);
     /** @type {Host} */
     const host = {
         ui,
-        machine:            createMachine(keyMatrix, joystick),
+        machine,
+        pausedFrame:        new Uint8Array(machine.pixels.length),
         kbd:                initKeyboard(ui.keyboard, keyMatrix),
         gfx:                null,
         sfx:                null,
         tapeName:           "",
         tapeState:          "empty",
+        tapeCursor:         0,
+        tapeDirty:          true,
+        blockRows:          [],
+        blockCells:         [],
+        blockStates:        [],
+        padIds:             ["", ""],
+        shownPadIds:        ["", ""],
+        splitStartY:        0,
+        splitStartHeight:   0,
         frameId:            undefined,
         lastNow:            0,
         carryMs:            0,
@@ -236,17 +279,19 @@ export function createHost(ui, options) {
         abortLoadRoms:      null,
         screenOnlyFallback: false,
         joystick,
-        chrome,
-        screenOnlyClass,
         onKeyDown,
         onKeyUp,
-        onResize,
         onScreenOnly,
     };
+
+    paintPrintout(host);
+    refreshTapeStatus(host, null);
+    refreshCartStatus(host, "", null);
 
     applySwitchParamValue(ui.keyboardToggle, options.query.get("keyboard") ?? "");
     applySwitchParamValue(ui.crt, options.query.get("crt") ?? "");
     applySwitchParamValue(ui.stereo, options.query.get("stereo") ?? "");
+    applySwitchParamValue(ui.muted, options.query.get("muted") ?? "");
     applySwitchParamValue(ui.auto, options.query.get("auto") ?? "");
     applySwitchParamValue(ui.turbo, options.query.get("turbo") ?? "");
     setKeyboardVisibility(host, ui.keyboardToggle.checked);
@@ -257,6 +302,16 @@ export function createHost(ui, options) {
 
     ui.playTape.onclick = function () {
         playTape(host.machine);
+    };
+
+    ui.rewTape.onclick = function () {
+        rewindTape(host.machine);
+        refreshTapeStatus(host, null);
+    };
+
+    ui.ffTape.onclick = function () {
+        forwardTape(host.machine);
+        refreshTapeStatus(host, null);
     };
 
     if (ui.nmi !== undefined) {
@@ -281,18 +336,32 @@ export function createHost(ui, options) {
         }
     };
 
+    ui.muted.onchange = function () {
+        if (host.sfx !== null) {
+            setSoundMuted(host.sfx, ui.muted.checked);
+        }
+    };
+
+    ui.paused.onchange = function () {
+        if (host.sfx !== null) {
+            setSoundPaused(host.sfx, ui.paused.checked);
+        }
+    };
+
     ui.fullscreenToggle.onclick = function () {
         toggleCanvasFullscreen(host);
     };
 
+    // Dragging the grip up grows the keyboard; the TV above gives way through
+    // the layout, and the resize observer refits the screen.
     ui.keyboardSplit.onpointerdown = function (/** @type {PointerEvent} */ e) {
         if (e.button !== 0) {
             return;
         }
         e.preventDefault();
         document.body.classList.add("keyboard-splitting");
-        scaleKeyboardFromY(ui.keyboard, ui.keyboardSplit, e.clientY);
-        resizeHost(host);
+        host.splitStartY = e.clientY;
+        host.splitStartHeight = faceHeight(ui.keyboard);
         ui.keyboardSplit.setPointerCapture(e.pointerId);
     };
 
@@ -300,8 +369,8 @@ export function createHost(ui, options) {
         if (!ui.keyboardSplit.hasPointerCapture(e.pointerId)) {
             return;
         }
-        scaleKeyboardFromY(ui.keyboard, ui.keyboardSplit, e.clientY);
-        resizeHost(host);
+        const height = host.splitStartHeight + host.splitStartY - e.clientY;
+        setFaceHeight(ui.keyboard, height, window.innerHeight * keyboardMaxShare);
     };
 
     ui.keyboardSplit.onpointerup = function (/** @type {PointerEvent} */ e) {
@@ -312,12 +381,10 @@ export function createHost(ui, options) {
         endKeyboardSplit(host, e.pointerId);
     };
 
+    // screen.js fits the canvas to its parent, so that is the box to watch.
     new ResizeObserver(function () {
-        if (host.onResize !== null) {
-            host.onResize();
-        }
         resizeHost(host);
-    }).observe(ui.screenSlot);
+    }).observe(ui.screen.parentElement ?? ui.screenSlot);
 
     document.onfullscreenchange = function () {
         let on = false;
@@ -418,6 +485,8 @@ export function createHost(ui, options) {
                 fillSoundQueue(host);
             });
             setSoundStereo(sfx, ui.stereo.checked);
+            setSoundMuted(sfx, ui.muted.checked);
+            setSoundPaused(sfx, ui.paused.checked);
             setSoundRate(host.machine, sfx.context.sampleRate);
             setSoundStateCallback(sfx, function (running) {
                 syncSoundState(host, running);
@@ -496,58 +565,124 @@ export function resetSystem(host) {
 }
 
 /**
+ * Put a tape in the recorder: the old one comes out first, then the cassette,
+ * counter, and printout show the new one. A tape that fails to parse leaves
+ * the recorder empty with the error showing.
+ *
+ * @param {Host} host
+ * @param {string} name
+ * @param {ArrayBuffer | Uint8Array} bytes
+ * @returns {string | null}
+ */
+export function loadTape(host, name, bytes) {
+    const err = insertTape(host.machine, bytes);
+    host.tapeName = "";
+    if (err === null) {
+        host.tapeName = name;
+    }
+    paintPrintout(host);
+    host.tapeDirty = true;
+    refreshTapeStatus(host, err);
+    return err;
+}
+
+/**
+ * Take the tape out of the recorder.
+ *
+ * @param {Host} host
+ */
+export function unloadTape(host) {
+    ejectTape(host.machine);
+    host.tapeName = "";
+    paintPrintout(host);
+    host.tapeDirty = true;
+    refreshTapeStatus(host, null);
+}
+
+/**
  * Report what the tape transport is doing. This runs every frame, so it only
- * touches the page when something it shows actually changes. A load error
- * stands until the next tape is chosen. A failed insert still ejects the
- * previous tape, so Play stays disabled.
+ * touches the page when something it shows actually changes: the state, or
+ * the block the tape has reached. A load error stands until the next tape is
+ * chosen. A failed insert still ejects the previous tape, so Play stays
+ * disabled.
  *
  * @param {Host} host
  * @param {string | null} err
  */
 export function refreshTapeStatus(host, err) {
     const state = tapeState(host.machine);
+    const cursor = tapeCursor(host.machine);
+    if (err === null && !host.tapeDirty && host.tapeState === state && host.tapeCursor === cursor) {
+        return;
+    }
+    const textChanged = err !== null || host.tapeDirty || host.tapeState !== state;
+    host.tapeDirty = false;
+    host.tapeState = state;
+    host.tapeCursor = cursor;
+    paintTransport(host);
     if (err !== null) {
-        host.tapeState = state;
         showError(host.ui.tapeInfo, err);
-        host.ui.playTape.textContent = "Play";
+        host.ui.playTapeLabel.textContent = "Play";
         host.ui.playTape.disabled = true;
         return;
     }
-    if (host.tapeState === state) {
+    if (!textChanged) {
         return;
     }
-    host.tapeState = state;
     switch (host.tapeState) {
     case "empty":
         showInfo(host.ui.tapeInfo, "No tape");
-        host.ui.playTape.textContent = "Play";
+        host.ui.playTapeLabel.textContent = "Play";
         host.ui.playTape.disabled = true;
         break;
     case "ready": {
         const blockCount = tapeInfo(host.machine).blockCount + " blocks.";
         const playMessage = "Enter LOAD \"\" or press Play.";
         showInfo(host.ui.tapeInfo, host.tapeName + ": " + blockCount + " " + playMessage);
-        host.ui.playTape.textContent = "Play";
+        host.ui.playTapeLabel.textContent = "Play";
         host.ui.playTape.disabled = false;
         break;
     }
     case "playing":
         showInfo(host.ui.tapeInfo, host.tapeName + ": Loading.");
-        host.ui.playTape.textContent = "Play";
+        host.ui.playTapeLabel.textContent = "Play";
         host.ui.playTape.disabled = true;
         break;
     case "blocked": {
         const resumeMessage = "Enter LOAD \"\" or press Resume for the next part.";
         showInfo(host.ui.tapeInfo, host.tapeName + ": Stopped. " + resumeMessage);
-        host.ui.playTape.textContent = "Resume";
+        host.ui.playTapeLabel.textContent = "Resume";
         host.ui.playTape.disabled = false;
         break;
     }
     case "done":
         showInfo(host.ui.tapeInfo, host.tapeName + ": Ended.");
-        host.ui.playTape.textContent = "Play";
+        host.ui.playTapeLabel.textContent = "Play";
         host.ui.playTape.disabled = true;
         break;
+    }
+}
+
+/**
+ * Show what is in the dock: the cartridge's name and what it maps, or that
+ * the dock is empty, or an error from loading one. Eject is only enabled with
+ * a cartridge in.
+ *
+ * @param {Host} host
+ * @param {string} name
+ * @param {string | null} err
+ */
+export function refreshCartStatus(host, name, err) {
+    const info = cartInfo(host.machine);
+    if (err !== null) {
+        showError(host.ui.cartInfo, err);
+    } else if (info.hasCart) {
+        showInfo(host.ui.cartInfo, name + ": " + info.summary);
+    } else {
+        showInfo(host.ui.cartInfo, "No cartridge.");
+    }
+    if (host.ui.ejectCart !== undefined) {
+        host.ui.ejectCart.disabled = !info.hasCart;
     }
 }
 
@@ -569,7 +704,7 @@ export function autoloadTapeIfEnabled(host) {
 }
 
 /** @param {Host} host */
-export function resizeHost(host) {
+function resizeHost(host) {
     if (host.gfx !== null) {
         resizeScreen(host.gfx);
     }
@@ -603,8 +738,8 @@ function toggleCanvasFullscreen(host) {
         return;
     }
 
-    const slot = host.ui.screen.parentElement;
-    if (slot?.requestFullscreen === undefined) {
+    const slot = host.ui.screenSlot;
+    if (slot.requestFullscreen === undefined) {
         host.screenOnlyFallback = true;
         setScreenOnly(host, true);
         return;
@@ -631,24 +766,17 @@ function setScreenOnly(host, on) {
     }
 }
 
-/** @param {Host} host */
+/**
+ * Screen-only mode is the fallback when real fullscreen is refused: CSS turns
+ * the screen slot into a full-window overlay and hides the rest of the page.
+ *
+ * @param {Host} host
+ */
 function applyVisibility(host) {
-    let chromeDisplay = "";
-    if (host.screenOnly) {
-        chromeDisplay = "none";
-        if (host.screenOnlyClass) {
-            host.ui.screenSlot.classList.add("screen-only");
-        }
-    } else if (host.screenOnlyClass) {
-        host.ui.screenSlot.classList.remove("screen-only");
-    }
+    host.ui.screenSlot.classList.toggle("screen-only", host.screenOnly);
     let keyboard = "";
     if (host.screenOnly || !host.keyboardVisible) {
         keyboard = "none";
-    }
-    host.ui.pageHeader.style.display = chromeDisplay;
-    for (let i = 0; i < host.chrome.length; i += 1) {
-        host.chrome[i].style.display = chromeDisplay;
     }
     host.ui.keyboardSplit.style.display = keyboard;
     host.ui.keyboard.style.display = keyboard;
@@ -674,7 +802,23 @@ function onFrame(host, now) {
     host.frameId = requestAnimationFrame(function (next) {
         onFrame(host, next);
     });
-    pollJoysticks(host.joystick);
+    pollJoysticks(host.joystick, host.padIds);
+    refreshPorts(host);
+    if (host.ui.paused.checked) {
+        // The machine holds where it is. The wall-clock budget and the speed
+        // report start afresh when it continues, so the pause is not caught
+        // up on or reported as lost audio.
+        host.lastNow = now;
+        host.carryMs = 0;
+        host.statsAt = 0;
+        refreshTapeStatus(host, null);
+        if (host.gfx !== null) {
+            host.pausedFrame.set(host.machine.pixels);
+            stampPause(host.pausedFrame);
+            drawScreen(host.gfx, host.pausedFrame);
+        }
+        return;
+    }
     if (host.lastNow === 0) {
         host.lastNow = now;
         host.carryMs = frameMs;
@@ -721,6 +865,152 @@ function onFrame(host, now) {
 }
 
 /**
+ * Rebuild the printout for the tape now in the recorder, one row per block,
+ * and the parts of the recorder that only change with the tape: the cassette
+ * label and the block total. With no tape the printout is hidden.
+ *
+ * @param {Host} host
+ */
+function paintPrintout(host) {
+    const listing = tapeListing(host.machine);
+    const blocks = listing.blocks;
+    const ui = host.ui;
+    ui.tapeBlocks.replaceChildren();
+    host.blockRows = [];
+    host.blockCells = [];
+    host.blockStates = [];
+    for (let i = 0; i < blocks.length; i += 1) {
+        const block = blocks[i];
+        const row = document.createElement("tr");
+        const num = document.createElement("td");
+        num.className = "num";
+        num.textContent = String(i + 1);
+        const kind = document.createElement("td");
+        kind.textContent = block.kind;
+        const contents = document.createElement("td");
+        contents.textContent = block.contents;
+        contents.title = block.contents;
+        const bytes = document.createElement("td");
+        bytes.className = "num";
+        if (block.bytes !== null) {
+            bytes.textContent = String(block.bytes);
+        }
+        const state = document.createElement("td");
+        row.append(num, kind, contents, bytes, state);
+        ui.tapeBlocks.appendChild(row);
+        host.blockRows.push(row);
+        host.blockCells.push(state);
+        host.blockStates.push("");
+    }
+    let plural = "s";
+    if (blocks.length === 1) {
+        plural = "";
+    }
+    ui.printout.hidden = blocks.length === 0;
+    ui.printoutName.textContent = host.tapeName;
+    ui.printoutName.title = host.tapeName;
+    ui.printoutSummary.textContent = listing.format + ", " + blocks.length + " block" + plural;
+    ui.printoutRows.scrollTop = 0;
+    ui.tapeLabel.textContent = host.tapeName;
+    ui.tapeLabel.title = host.tapeName;
+    ui.tapeTotal.textContent = "";
+    if (blocks.length > 0) {
+        ui.tapeTotal.textContent = "of " + blocks.length + " block" + plural;
+    }
+}
+
+/**
+ * Move the recorder to where the tape is: its state drives the cassette and
+ * the reels, the counter shows the next block (END once all have played), and
+ * the printout marks blocks done, the next one, or the one loading, keeping
+ * that row in view. Only the state cells that change are written.
+ *
+ * @param {Host} host
+ */
+function paintTransport(host) {
+    const ui = host.ui;
+    const state = host.tapeState;
+    const cursor = host.tapeCursor;
+    const count = host.blockCells.length;
+    ui.recorder.dataset.state = state;
+    ui.recorder.toggleAttribute("data-wound", count > 0 && cursor >= count);
+    ui.rewTape.disabled = state === "empty";
+    ui.ffTape.disabled = state === "empty" || cursor >= count;
+    let digits = "000";
+    if (state !== "empty" && count > 0) {
+        digits = "END";
+        if (cursor < count) {
+            digits = String(Math.min(cursor + 1, 999)).padStart(3, "0");
+        }
+    }
+    const cells = ui.tapeCounter.children;
+    for (let i = 0; i < cells.length && i < digits.length; i += 1) {
+        cells[i].textContent = digits[i];
+    }
+    for (let i = 0; i < count; i += 1) {
+        let text = "";
+        if (i < cursor) {
+            text = "done";
+        } else if (i === cursor) {
+            text = "next";
+            if (state === "playing") {
+                text = "load";
+            }
+        }
+        if (text === host.blockStates[i]) {
+            continue;
+        }
+        host.blockStates[i] = text;
+        host.blockCells[i].textContent = text;
+        host.blockCells[i].classList.toggle("next", i === cursor);
+    }
+    if (cursor < count) {
+        scrollRowIntoView(ui.printoutRows, host.blockRows[cursor]);
+    }
+}
+
+/**
+ * Scroll a printout row into its box without scrolling the page, which
+ * scrollIntoView would also do.
+ *
+ * @param {HTMLElement} box
+ * @param {HTMLElement} row
+ */
+function scrollRowIntoView(box, row) {
+    const boxRect = box.getBoundingClientRect();
+    const rowRect = row.getBoundingClientRect();
+    if (rowRect.top < boxRect.top) {
+        box.scrollTop -= boxRect.top - rowRect.top;
+    } else if (rowRect.bottom > boxRect.bottom) {
+        box.scrollTop += rowRect.bottom - boxRect.bottom;
+    }
+}
+
+/**
+ * Name the gamepad on each joystick port, or show that there is none. The poll
+ * runs every frame, so labels are only written when a port changes.
+ *
+ * @param {Host} host
+ */
+function refreshPorts(host) {
+    const labels = [host.ui.joy1Info, host.ui.joy2Info];
+    for (let i = 0; i < 2; i += 1) {
+        const id = host.padIds[i];
+        if (id === host.shownPadIds[i]) {
+            continue;
+        }
+        host.shownPadIds[i] = id;
+        if (id === "") {
+            labels[i].textContent = "No gamepad";
+            labels[i].title = "";
+        } else {
+            labels[i].textContent = padLabel(id);
+            labels[i].title = id;
+        }
+    }
+}
+
+/**
  * Paint one frame without mixing it. A burst still has to show where the tape
  * got to when the queue is already full, and audio it has no room for would
  * only be cut at the play head.
@@ -744,7 +1034,7 @@ function stepPaintedMachine(host) {
  * @param {Host} host
  */
 function fillSoundQueue(host) {
-    if (host.sfx === null || !soundIsRunning(host.sfx)) {
+    if (host.sfx === null || !soundIsRunning(host.sfx) || host.ui.paused.checked) {
         return;
     }
     for (let ran = 0; ran < 4 && soundWantsFrame(host.sfx); ran += 1) {
@@ -767,8 +1057,11 @@ function refreshSoundStatus(host, now) {
         return;
     }
     if (host.statsAt === 0) {
+        const start = soundStats(host.sfx);
         host.statsAt = now;
         host.framesRun = 0;
+        host.statsCut = start.cut;
+        host.statsGap = start.gap;
         return;
     }
     const span = now - host.statsAt;

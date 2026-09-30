@@ -1,75 +1,62 @@
+/* Shared look of both pages: the TS 2068 on a desk. The emulated screen sits
+   in a TV, a TS 2020 program recorder with a printout of the tape's blocks
+   stands beside it, and the silver case below carries the machine keys, the
+   onscreen keyboard, the dock door, and the joystick ports. TV, recorder, and
+   case share the silver finish, with dark recesses for the screen, cassette
+   window, and keys. The palette is greys with the badge red as the only
+   emphasis; the badge stripe and the number-row colour names are kept as
+   printed on the machine. Each page sets --side, the width of the desk
+   columns beside the TV, and places the parts with grid areas. */
 :root {
     color-scheme: dark;
-    --paper: #111;
-    --ink: #EEE;
-    --muted: #999;
-    --line: #333;
-    --control-radius: 3.5px;
+    --side: 290px;
+    --desk: #161616;
+    --desk-hi: #2A2A2A;
+    --case-hi: #E9E9E9;
+    --case: #CFCFCF;
+    --case-lo: #ABABAB;
+    --case-line: #8E8E8E;
+    --key: #FAFAFA;
+    --key-lo: #DCDCDC;
+    --ink: #111;
+    --silver:
+        linear-gradient(90deg, #FFFFFF14, transparent 12%, transparent 88%, #0000000F),
+        linear-gradient(var(--case-hi), var(--case) 35%, var(--case-lo));
+    --silver-edge: inset 0 1px 0 #FFF, inset 0 -3px 0 #8A8A8A;
+    --print: #262626;
+    --print-2: #505050;
+    --label: #C4C4C4;
+    --muted: #8A8A8A;
+    --red: #EC4230;
+    --stripe-g: #2DB34E;
+    --stripe-b: #3170DE;
+    --font: "Helvetica Neue", Helvetica, Arial, sans-serif;
 }
-html, body {
+* {
+    box-sizing: border-box;
+}
+html,
+body {
     height: 100%;
     margin: 0;
-    font: 13px/1.2 monospace;
-    background: var(--paper);
-    color: var(--ink);
 }
 body {
-    display: flex;
-    flex-direction: column;
-    min-height: 100%;
+    background: radial-gradient(ellipse at 40% -10%, var(--desk-hi), var(--desk) 65%);
+    color: var(--label);
+    font: 13px/1.3 var(--font);
 }
-header {
-    border-bottom: 1px solid var(--line);
-}
-.colbox,
-.rowbox {
-    display: flex;
-    gap: 6px;
-}
-.colbox {
-    flex-direction: column;
-    flex: 0;
-    align-items: stretch;
-}
-.rowbox {
-    flex-direction: row;
-    flex-wrap: wrap;
-    align-items: center;
-    min-width: 0;
+button {
+    font: inherit;
+    color: inherit;
 }
 a {
-    color: var(--accent);
+    color: var(--label);
+    text-decoration: none;
 }
-button, input {
-    font: inherit;
+a:hover {
+    color: #FFF;
 }
-button,
-.switch {
-    display: inline-block;
-    padding: 5px 12px;
-    border: 1px solid #666;
-    border-radius: var(--control-radius);
-    font-weight: bold;
-    background: #333;
-    color: var(--ink);
-    cursor: pointer;
-}
-button:hover,
-.switch:hover {
-    background: #444;
-}
-button:active,
-.switch:active {
-    background: #000;
-}
-.switch {
-    position: relative;
-}
-.switch:has(> input[type="checkbox"]:checked) {
-    color: #000;
-    background: var(--accent);
-}
-.switch > input[type="checkbox"] {
+input[type="checkbox"] {
     position: absolute;
     width: 0;
     height: 0;
@@ -77,70 +64,1173 @@ button:active,
     opacity: 0;
     pointer-events: none;
 }
-.media-info {
-    min-width: 0;
-    overflow-wrap: break-word;
-    color: var(--muted);
+.icon-defs {
+    position: absolute;
 }
-.media-info.error,
-.media-info > .error {
-    font-weight: 600;
-    color: var(--accent);
+svg.i {
+    width: 12px;
+    height: 12px;
+    fill: currentColor;
+}
+.error {
+    color: var(--red);
+}
+
+/* ---------- desk: TV and recorder stand on the case line ---------- */
+body {
+    display: grid;
+    grid-template-columns: var(--side) minmax(0, 1fr) var(--side);
+    grid-template-rows: minmax(0, 1fr) auto;
+    gap: 22px 26px;
+    padding: 18px 24px 22px;
+}
+
+/* ---------- TV ---------- */
+/* The bezel hugs a 4:3 picture: 52px of bezel and slot padding across, and
+   94px of bezel, slot padding, and foot down. */
+.tv-slot {
+    grid-area: tv;
+    display: grid;
+    place-items: end center;
+    min-width: 0;
+    min-height: 0;
+    container-type: size;
+}
+.tv {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    width: calc(min(100cqw - 52px, (100cqh - 94px) * 4 / 3) + 52px);
+    container-type: inline-size;
+    padding: 16px 16px 0;
+    border-radius: 7px;
+    background: var(--silver);
+    box-shadow: var(--silver-edge), 0 22px 30px -14px #000;
+    color: var(--print);
+}
+#screen-slot {
+    padding: 10px;
+    border-radius: 12px;
+    background: #080808;
+    box-shadow: inset 0 3px 10px #000, 0 1px 0 #FFFFFFB3, 0 -1px 0 #00000040;
+}
+/* screen.js fits the canvas to the tube: all of it with the CRT filter, or
+   whole multiples of the pixels without, centred on black. */
+.tube {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    aspect-ratio: 4 / 3;
+    overflow: hidden;
+    background: #000;
 }
 #screen {
     display: block;
+    outline: none;
     image-rendering: pixelated;
 }
 #screen.crt {
     image-rendering: auto;
 }
+body:has(#crt:checked) .tube {
+    border-radius: 3% / 4%;
+    box-shadow: 0 0 30px #FFFFFF12;
+}
+#screen-slot:focus-within {
+    box-shadow: inset 0 3px 10px #000, 0 0 0 2px var(--red);
+}
+/* Fullscreen, or the full-window overlay that stands in for it when the
+   browser refuses: only the picture remains. */
+#screen-slot:fullscreen,
+#screen-slot.screen-only {
+    position: fixed;
+    inset: 0;
+    z-index: 100;
+    padding: 0;
+    border-radius: 0;
+    background: #000;
+    box-shadow: none;
+}
+#screen-slot:fullscreen .tube,
+#screen-slot.screen-only .tube {
+    width: 100%;
+    height: 100%;
+    border-radius: 0;
+    box-shadow: none;
+    aspect-ratio: auto;
+}
+body:has(#screen-slot.screen-only) > :not(.tv-slot) {
+    display: none;
+}
+body:has(#screen-slot.screen-only) :is(.tv-slot, .tv) {
+    container-type: normal;
+}
+.tv-foot {
+    display: flex;
+    flex: none;
+    align-items: center;
+    gap: 16px;
+    height: 58px;
+    padding: 8px 6px;
+}
+.tv-brand {
+    display: flex;
+    flex-direction: column;
+    flex: none;
+    font-size: 17px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-shadow: 0 1px 0 #FFFFFF99;
+}
+.tv-brand small {
+    color: var(--print-2);
+    font-size: 9px;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+}
+.status {
+    flex: 1 1 0;
+    min-width: 0;
+    overflow: hidden;
+    color: var(--print-2);
+    font-size: 11.5px;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+.status span:not(:empty) ~ span:not(:empty)::before {
+    content: " · ";
+}
+.tv-controls {
+    display: flex;
+    flex: none;
+    align-items: flex-end;
+    gap: 14px;
+}
+/* A TV push button: indicator above, silver cap, label below */
+.tv-btn {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--print-2);
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    cursor: pointer;
+}
+.tv-btn .cap {
+    width: 34px;
+    height: 13px;
+    border-radius: 3px;
+    background: linear-gradient(#F4F4F4, #BEBEBE);
+    box-shadow: inset 0 1px 0 #FFF, 0 2px 0 #7C7C7C, 0 3px 4px #00000040;
+}
+.tv-btn:hover {
+    color: #000;
+}
+.tv-btn:active .cap,
+.tv-btn:has(> input:checked) .cap {
+    transform: translateY(1px);
+    background: linear-gradient(#DCDCDC, #B2B2B2);
+    box-shadow: inset 0 1px 0 #EEE, 0 1px 0 #7C7C7C;
+}
+.tv-btn:has(> input:focus-visible) .cap,
+.tv-btn:focus-visible .cap {
+    outline: 2px solid var(--red);
+    outline-offset: 2px;
+}
+.led {
+    display: block;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: #3A1511;
+    box-shadow: inset 0 1px 1px #000;
+}
+.tv-btn:has(> input:checked) .led,
+.kc:has(> input:checked) .led,
+.pk:has(> input:checked) .led,
+.led.on {
+    background: var(--red);
+    box-shadow: 0 0 6px var(--red);
+}
+
+/* ---------- recorder ---------- */
+.deck {
+    grid-area: deck;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    min-width: 0;
+    min-height: 0;
+}
+/* A TS 2040 printout listing the tape in the recorder, lying on the desk
+   above it. When the desk is short the strip gets shorter, down to its
+   heading and one block, and the blocks scroll under the heading. */
+.printout {
+    display: flex;
+    flex: 0 1 auto;
+    flex-direction: column;
+    min-height: 86px;
+    margin: 0 8px 20px;
+    filter: drop-shadow(0 5px 6px #000000A6);
+}
+/* Silver thermal paper, torn off at both ends */
+.slip {
+    display: flex;
+    flex: 0 1 auto;
+    flex-direction: column;
+    min-height: 0;
+    padding: 14px 12px;
+    background:
+        repeating-linear-gradient(transparent 0 2px, #0000000A 2px 3px),
+        linear-gradient(100deg, #E9E9E9, #D5D5D5 45%, #EDEDED 60%, #D8D8D8);
+    color: #262626;
+    -webkit-mask:
+        conic-gradient(from 135deg at top, transparent, #000 1deg 89deg, transparent 90deg) 0 0 / 9px 51% repeat-x,
+        conic-gradient(from -45deg at bottom, transparent, #000 1deg 89deg, transparent 90deg) 0 100% / 9px 51% repeat-x;
+    mask:
+        conic-gradient(from 135deg at top, transparent, #000 1deg 89deg, transparent 90deg) 0 0 / 9px 51% repeat-x,
+        conic-gradient(from -45deg at bottom, transparent, #000 1deg 89deg, transparent 90deg) 0 100% / 9px 51% repeat-x;
+}
+.slip-rows {
+    flex: 0 1 auto;
+    min-height: 0;
+    overflow: auto;
+    scrollbar-width: none;
+}
+.slip-head {
+    display: flex;
+    flex: none;
+    align-items: baseline;
+    gap: 8px;
+    padding-bottom: 4px;
+    border-bottom: 1.5px solid #262626;
+    font-size: 10.5px;
+    white-space: nowrap;
+}
+.slip-head b {
+    min-width: 0;
+    overflow: hidden;
+    font-size: 12px;
+    text-overflow: ellipsis;
+}
+.slip-head span {
+    margin-left: auto;
+    color: #5C5C5C;
+}
+.slip table {
+    width: 100%;
+    margin-top: 2px;
+    border-collapse: collapse;
+    table-layout: fixed;
+    font-size: 10.5px;
+    font-variant-numeric: tabular-nums;
+}
+.slip .c-num {
+    width: 18px;
+}
+.slip .c-block {
+    width: 44px;
+}
+.slip .c-bytes {
+    width: 42px;
+}
+.slip .c-state {
+    width: 34px;
+}
+.slip th,
+.slip td {
+    padding: 2px 3px;
+    overflow: hidden;
+    text-align: left;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.slip th {
+    color: #5C5C5C;
+    font-size: 8.5px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+}
+.slip td {
+    border-top: 1px dotted #8A8A8A;
+}
+.slip .num {
+    text-align: right;
+}
+.slip td.next {
+    color: var(--red);
+    font-weight: 700;
+}
+.printout[hidden] {
+    display: none;
+}
+.links {
+    display: flex;
+    justify-content: flex-end;
+    margin-bottom: auto;
+    gap: 18px;
+    padding: 2px 4px 0;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+}
+.links a::after {
+    content: " \2197";
+    color: var(--red);
+}
+.recorder {
+    flex: none;
+    padding: 12px 14px 16px;
+    border-radius: 7px;
+    background: var(--silver);
+    box-shadow: var(--silver-edge), 0 18px 26px -14px #000;
+    color: var(--print);
+}
+.plate {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    margin-bottom: 10px;
+    overflow: hidden;
+    white-space: nowrap;
+    color: var(--print-2);
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+}
+.plate b {
+    color: var(--print);
+    font-size: 13px;
+    letter-spacing: 0.08em;
+    text-shadow: 0 1px 0 #FFFFFF99;
+}
+.plate .fill {
+    flex: 1;
+}
+.window {
+    height: 122px;
+    padding: 12px 16px;
+    border-radius: 6px;
+    background: linear-gradient(#101010, #050505);
+    box-shadow: inset 0 2px 10px #000, 0 1px 0 #FFFFFFB3, 0 -1px 0 #00000040;
+}
+.cassette {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    padding: 7px 9px 9px;
+    border-radius: 5px;
+    background: linear-gradient(#484848, #333);
+    box-shadow: inset 0 1px 0 #5A5A5A;
+}
+.cas-label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 3px 7px;
+    border-radius: 2px;
+    background:
+        linear-gradient(90deg, var(--red) 0 33.3%, var(--stripe-g) 0 66.6%, var(--stripe-b) 0) 0 100% / 100% 3px no-repeat,
+        #EDEDED;
+    color: var(--ink);
+    font-size: 11px;
+    font-weight: 700;
+}
+.cas-label .side-a {
+    display: grid;
+    flex: none;
+    place-items: center;
+    width: 15px;
+    height: 15px;
+    border-radius: 50%;
+    background: var(--ink);
+    color: #EDEDED;
+    font-size: 9px;
+}
+.cas-label .name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.cas-window {
+    display: flex;
+    flex: 1;
+    align-items: center;
+    justify-content: space-between;
+    width: 74%;
+    margin: 8px auto 0;
+    padding: 0 7px;
+    border-radius: 999px;
+    background: linear-gradient(90deg, #151515, #262626 50%, #151515);
+    box-shadow: inset 0 1px 3px #000;
+}
+/* Tape wound on both hubs, seen through the window */
+.reel {
+    display: block;
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    background:
+        radial-gradient(circle, #111 0 4px, transparent 4.5px),
+        conic-gradient(#E4E4E4 0 8%, #9A9A9A 0 25%, #E4E4E4 0 33%, #9A9A9A 0 58%, #E4E4E4 0 66%, #9A9A9A 0 91%, #E4E4E4 0) center / 18px 18px no-repeat,
+        radial-gradient(circle, transparent 9px, #0C0C0C 9.5px);
+}
+/* The tape is wound on the left hub until it has played out. */
+.reel:first-child,
+.recorder[data-wound] .reel:last-child {
+    box-shadow: 0 0 0 5px #0C0C0C;
+}
+.recorder[data-wound] .reel:first-child {
+    box-shadow: none;
+}
+.recorder[data-state="playing"] .reel {
+    animation: spin 1.6s linear infinite;
+}
+.recorder[data-state="empty"] .cassette {
+    visibility: hidden;
+}
+@media (prefers-reduced-motion: reduce) {
+    .recorder[data-state="playing"] .reel {
+        animation: none;
+    }
+}
+@keyframes spin {
+    to {
+        rotate: -360deg;
+    }
+}
+.transport {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 12px 0 10px;
+}
+.counter {
+    display: flex;
+    flex: none;
+    gap: 2px;
+    padding: 3px;
+    border-radius: 3px;
+    background: #050505;
+    box-shadow: inset 0 1px 2px #000, 0 1px 0 #FFFFFFB3;
+}
+.counter span {
+    width: 13px;
+    border-radius: 2px;
+    background: linear-gradient(#1A1A1A, #2E2E2E 45%, #1A1A1A);
+    color: #EEE;
+    font-size: 13px;
+    font-weight: 700;
+    line-height: 20px;
+    text-align: center;
+}
+.counter-note {
+    color: var(--print-2);
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+}
+#tape-info {
+    min-height: 2.6em;
+    margin-bottom: 12px;
+    color: var(--print);
+    font-size: 12px;
+}
+/* Piano keys: latching ones stay down while their switch is on */
+.piano {
+    display: grid;
+    grid-auto-columns: minmax(0, 1fr);
+    grid-auto-flow: column;
+    gap: 4px;
+    padding: 6px 5px 3px;
+    border-radius: 5px;
+    background: #0B0B0B;
+    box-shadow: inset 0 2px 4px #000, 0 1px 0 #FFFFFFB3;
+}
+.pk {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 5px;
+    height: 50px;
+    padding: 0 0 8px;
+    border: 0;
+    border-radius: 2px 2px 5px 5px;
+    background: linear-gradient(#EDEDED, #C2C2C2 65%, #A5A5A5);
+    box-shadow: inset 0 1px 0 #FFF, 0 5px 0 #5E5E5E;
+    color: var(--ink);
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    transform: translateY(-4px);
+    cursor: pointer;
+}
+.pk .led {
+    position: absolute;
+    top: 7px;
+    left: 50%;
+    translate: -50% 0;
+}
+.pk:hover {
+    background: linear-gradient(#FFF, #CFCFCF 65%, #AFAFAF);
+}
+.pk:active,
+.pk:has(> input:checked) {
+    background: linear-gradient(#D2D2D2, #ADADAD);
+    box-shadow: inset 0 1px 0 #EEE, 0 1px 0 #5E5E5E;
+    transform: translateY(0);
+}
+.pk:disabled {
+    color: #0000004D;
+    cursor: default;
+}
+.pk:focus-visible,
+.pk:has(> input:focus-visible) {
+    outline: 2px solid var(--red);
+    outline-offset: 2px;
+}
+
+/* ---------- TS 2068 keycaps: white cap, black legend bar ---------- */
+.kc {
+    display: inline-flex;
+    flex-direction: column;
+    justify-content: space-between;
+    min-width: 62px;
+    height: 36px;
+    padding: 0;
+    overflow: hidden;
+    border: 0;
+    border-radius: 4px;
+    background: linear-gradient(var(--key), var(--key-lo));
+    box-shadow: 0 2px 0 #7C7C7C, 0 4px 6px #00000059;
+    color: var(--ink);
+    text-align: left;
+    cursor: pointer;
+}
+.kc b {
+    padding: 4px 7px 0;
+    font-size: 11px;
+    letter-spacing: 0.04em;
+}
+.kc small {
+    display: block;
+    padding: 1px 4px;
+    background: var(--ink);
+    color: #F2F2F2;
+    font-size: 8.5px;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-align: center;
+    text-transform: uppercase;
+}
+.kc:hover {
+    background: linear-gradient(#FFF, #E8E8E8);
+}
+/* A keycap that is a link keeps its ink rather than the page's link hover. */
+a.kc:hover {
+    color: var(--ink);
+}
+.kc:active,
+.kc:has(> input:checked) {
+    transform: translateY(1px);
+    box-shadow: 0 1px 0 #7C7C7C, 0 2px 3px #00000059;
+}
+.kc:disabled {
+    color: #00000059;
+    cursor: default;
+}
+.kc:focus-visible,
+.kc:has(> input:focus-visible) {
+    outline: 2px solid var(--red);
+    outline-offset: 2px;
+}
+.kc.sm {
+    min-width: 54px;
+    height: 32px;
+}
+.kc .led {
+    position: absolute;
+    top: 5px;
+    right: 6px;
+}
+.kc:has(.led) {
+    position: relative;
+}
+
+/* ---------- the case ---------- */
+.case {
+    grid-area: case;
+    position: relative;
+    display: grid;
+    grid-template-columns: 250px minmax(0, 1fr) 250px;
+    grid-template-areas: "badge keys dock";
+    gap: 22px;
+    padding: 20px 22px 18px;
+    border-radius: 7px;
+    background: var(--silver);
+    box-shadow: var(--silver-edge), 0 26px 40px -16px #000;
+    color: var(--ink);
+}
+/* The rear edge of the case is the keyboard split handle. */
 #keyboard-split {
-    flex: 0 0 6px;
+    position: absolute;
+    top: 6px;
+    left: 50%;
+    width: 120px;
+    height: 5px;
+    border-radius: 3px;
+    background: #0000001F;
+    box-shadow: inset 0 1px 1px #00000033;
+    translate: -50% 0;
     cursor: row-resize;
-    background: var(--line);
     touch-action: none;
 }
-#keyboard-split:hover,
-body.keyboard-splitting #keyboard-split {
-    background: var(--accent);
+#keyboard-split::before {
+    content: "";
+    position: absolute;
+    inset: -8px -10px;
 }
 body.keyboard-splitting {
+    cursor: row-resize;
     user-select: none;
 }
-#keyboard {
-    flex-shrink: 0;
-    padding: 10px 14px 14px;
-    border-top: none;
-    touch-action: none;
+#keyboard-split:hover {
+    background: var(--red);
 }
-.keyboard-face {
+.badge {
+    grid-area: badge;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    min-width: 0;
+}
+/* The badge stripe and name sit at the bottom left of the case. */
+.brand {
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+    margin-top: auto;
+    color: #262626;
+}
+.stripe {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 3px;
+    width: 128px;
+    height: 7px;
+}
+.stripe i:nth-child(1) {
+    background: var(--red);
+}
+.stripe i:nth-child(2) {
+    background: var(--stripe-g);
+}
+.stripe i:nth-child(3) {
+    background: var(--stripe-b);
+}
+.pcc {
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+}
+.fn-keys {
+    display: flex;
+    gap: 8px;
+}
+.grille {
+    grid-area: keys;
+    align-self: stretch;
+    min-height: 70px;
+    border-radius: 6px;
+    background: repeating-linear-gradient(transparent 0 6px, #00000024 6px 8px, #FFFFFF59 8px 9px);
+}
+body:has(#keyboard-toggle:checked) .grille {
+    display: none;
+}
+.dock {
+    grid-area: dock;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+/* The hinged dock door over the cartridge connector */
+.door {
     position: relative;
-    width: 533px;
-    aspect-ratio: 533 / 191;
-    margin: 0 auto;
-    background: url("keyboard.png") center / 100% 100% no-repeat;
-    isolation: isolate;
-    user-select: none;
-    -webkit-user-select: none;
-    -webkit-touch-callout: none;
-    -webkit-user-drag: none;
-    -webkit-tap-highlight-color: transparent;
-    touch-action: none;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 18px 14px 22px;
+    border-radius: 6px;
+    background: linear-gradient(#C2C2C2, #B3B3B3);
+    box-shadow: inset 0 0 0 1px #979797, inset 0 2px 0 #FFFFFF73, 0 1px 0 #FFFFFF99;
 }
-.keyboard-hit {
+.door::before {
+    content: "";
     position: absolute;
-    box-sizing: border-box;
+    top: 6px;
+    left: 10px;
+    right: 10px;
+    height: 2px;
+    border-radius: 1px;
+    background: #8F8F8F;
+    box-shadow: 0 1px 0 #FFFFFF73;
+}
+.door::after {
+    content: "";
+    position: absolute;
+    bottom: 6px;
+    left: 50%;
+    width: 44px;
+    height: 7px;
+    border-radius: 0 0 22px 22px / 0 0 7px 7px;
+    background: #9E9E9E;
+    box-shadow: inset 0 1px 2px #0000004D;
+    translate: -50% 0;
+}
+.door-label {
+    display: flex;
+    justify-content: space-between;
+    color: #3A3A3A;
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.24em;
+    text-shadow: 0 1px 0 #FFFFFF80;
+}
+.slot {
+    display: flex;
+    align-items: center;
+    min-height: 34px;
+    padding: 6px 10px;
+    border-radius: 3px;
+    background: linear-gradient(#262626, #3A3A3A);
+    box-shadow: inset 0 2px 4px #000;
+    color: var(--label);
+    font-size: 11.5px;
+}
+/* The two joystick sockets on the case sides, one per host gamepad */
+.ports {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    margin-top: auto;
+}
+/* With the keyboard hidden the case folds into a strip one part high. The
+   badge breaks up into grid items so each page can place them in its areas. */
+body:has(#keyboard-toggle:not(:checked)) .case {
+    align-items: center;
+    gap: 14px 22px;
+}
+body:has(#keyboard-toggle:not(:checked)) .badge {
+    display: contents;
+}
+body:has(#keyboard-toggle:not(:checked)) .brand {
+    grid-area: brand;
+}
+body:has(#keyboard-toggle:not(:checked)) .fn-keys {
+    grid-area: fn;
+    align-self: start;
+}
+body:has(#keyboard-toggle:not(:checked)) .grille {
+    grid-area: grille;
+    min-height: 0;
+}
+body:has(#keyboard-toggle:not(:checked)) .dock {
+    flex-direction: row;
+    align-items: center;
+    gap: 14px;
+}
+body:has(#keyboard-toggle:not(:checked)) .dock .door {
+    width: 210px;
+}
+body:has(#keyboard-toggle:not(:checked)) .ports {
+    grid-template-columns: auto;
+    margin-top: 0;
+}
+.port {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: #333;
+    font-size: 8.5px;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    line-height: 1.3;
+    text-transform: uppercase;
+}
+.port > span {
+    min-width: 0;
+}
+.port small {
+    display: block;
+    overflow: hidden;
+    color: #666;
+    font-size: 8.5px;
+    letter-spacing: 0.04em;
+    text-overflow: ellipsis;
+    text-transform: none;
+    white-space: nowrap;
+}
+/* A DE-9 shell: five pins in the wide top row, four offset in the bottom row.
+   Each row is a strip exactly as wide as its pins, one 5.5px tile per pin. */
+.dsub {
+    position: relative;
+    flex: none;
+    width: 34px;
+    height: 16px;
+    background: #1E1E1E;
+    clip-path: polygon(0 0, 100% 0, 88% 100%, 12% 100%);
+}
+.dsub::before,
+.dsub::after {
+    content: "";
+    position: absolute;
+    height: 3px;
+    background: radial-gradient(circle, #9A9A9A 0 1.2px, transparent 1.6px) 0 0 / 5.5px 3px repeat-x;
+}
+.dsub::before {
+    top: 3px;
+    left: 3.25px;
+    width: 27.5px;
+}
+.dsub::after {
+    top: 9px;
+    left: 6px;
+    width: 22px;
+}
+
+/* ---------- keyboard ---------- */
+#keyboard {
+    grid-area: keys;
+    display: flex;
+    justify-content: center;
+    min-width: 0;
+    touch-action: none;
+}
+/* Board units: one key pitch is 1u and the board is 11.9u wide, laid out after
+   keyboard.png. Everything scales with the board through container units. */
+/* The board keeps its own height at the top of the keys column rather than
+   stretching to the case, so its measured size is its drawn size. */
+.keyboard-face {
+    align-self: flex-start;
+    width: min(100%, 780px);
+    max-width: 100%;
+    container-type: inline-size;
     user-select: none;
     -webkit-user-select: none;
-    touch-action: none;
-    -webkit-touch-callout: none;
-    -webkit-tap-highlight-color: transparent;
 }
-.keyboard-hit.hover {
-    background: color-mix(in srgb, var(--accent) 25%, transparent);
+.kb-band,
+.kb-row {
+    --u: calc(100cqw / 11.9);
+    display: flex;
 }
-.keyboard-hit.on,
-.keyboard-hit.on.hover {
-    background: #FFF;
-    mix-blend-mode: difference;
+.kb-band {
+    height: calc(var(--u) * 0.2);
+    margin-bottom: calc(var(--u) * 0.02);
+    padding-left: calc(var(--u) * 0.3);
+    background: #111;
+}
+.kb-band span {
+    width: var(--u);
+    padding-right: calc(var(--u) * 0.1);
+    font-size: calc(var(--u) * 0.14);
+    font-weight: 700;
+    line-height: calc(var(--u) * 0.2);
+    text-align: center;
+}
+.c-blue {
+    color: #4E80FF;
+}
+.c-red {
+    color: #FF4A3D;
+}
+.c-magenta {
+    color: #F04CF0;
+}
+.c-green {
+    color: #3FD35C;
+}
+.c-cyan {
+    color: #33D6E6;
+}
+.c-yellow {
+    color: #F2DC3A;
+}
+.c-white,
+.c-black {
+    color: #F2F2F2;
+}
+.kb-row {
+    height: calc(var(--u) * 0.9);
+    border-bottom: 1px solid #FFFFFF73;
+    box-shadow: 0 1px 0 #0000001F;
+}
+.kb-row.r1 {
+    padding-left: calc(var(--u) * 0.3);
+}
+.kb-row.r2 {
+    padding-left: calc(var(--u) * 0.8);
+}
+.kb-row.r3 {
+    padding-left: calc(var(--u) * 1.05);
+}
+.kb-row.r4 {
+    padding-left: calc(var(--u) * 0.3);
+}
+.kb-row.r5 {
+    height: calc(var(--u) * 0.62);
+    padding: calc(var(--u) * 0.1) 0 0 calc(var(--u) * 2.45);
+    border-bottom: 0;
+    box-shadow: none;
+}
+.k {
+    display: flex;
+    flex: none;
+    flex-direction: column;
+    width: var(--u);
+    padding-right: calc(var(--u) * 0.1);
+}
+.k.w-enter {
+    width: calc(var(--u) * 1.55);
+}
+.k.w-caps {
+    width: calc(var(--u) * 1.15);
+}
+.k.w-space {
+    width: calc(var(--u) * 7);
+}
+.k .up,
+.k .dn {
+    height: calc(var(--u) * 0.18);
+    overflow: hidden;
+    font-size: max(6px, calc(var(--u) * 0.13));
+    font-weight: 700;
+    line-height: calc(var(--u) * 0.18);
+    text-align: center;
+    white-space: nowrap;
+}
+.k .cap {
+    position: relative;
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    overflow: hidden;
+    border-radius: calc(var(--u) * 0.07);
+    background: linear-gradient(var(--key), var(--key-lo));
+    box-shadow: 0 1px 0 #7C7C7C;
+}
+.k.hover .cap {
+    background: linear-gradient(#FFF, #EAEAEA);
+}
+.k.on .cap {
+    background: var(--ink);
+    color: var(--key);
+}
+.k.on .cap i {
+    background: var(--key);
+    color: var(--ink);
+}
+.k.on .g {
+    filter: invert(1);
+}
+.k .cap b {
+    padding: calc(var(--u) * 0.03) calc(var(--u) * 0.08) 0;
+    font-size: max(8px, calc(var(--u) * 0.22));
+    line-height: 1;
+}
+.k .cap em {
+    margin-top: auto;
+    padding-right: calc(var(--u) * 0.07);
+    font-size: max(6px, calc(var(--u) * 0.13));
+    font-style: normal;
+    font-weight: 700;
+    line-height: 1.1;
+    text-align: right;
+}
+.k .cap i {
+    height: calc(var(--u) * 0.15);
+    background: var(--ink);
+    color: #F2F2F2;
+    font-size: max(6px, calc(var(--u) * 0.12));
+    font-style: normal;
+    font-weight: 700;
+    line-height: calc(var(--u) * 0.15);
+    text-align: center;
+}
+.k .cap.word {
+    align-items: center;
+    justify-content: center;
+    white-space: pre-line;
+    font-size: max(6px, calc(var(--u) * 0.13));
+    font-weight: 700;
+    line-height: 1.15;
+    text-align: center;
+}
+.k .cap.sym {
+    background: var(--ink);
+    color: #F2F2F2;
+}
+.k .cap.bar {
+    margin-bottom: calc(var(--u) * 0.1);
+}
+/* The block graphics printed on the number keys: white quadrants on black */
+.g {
+    position: absolute;
+    top: calc(var(--u) * 0.06);
+    right: calc(var(--u) * 0.1);
+    width: calc(var(--u) * 0.18);
+    height: calc(var(--u) * 0.18);
+    border: 1px solid #0000002E;
+    background-repeat: no-repeat;
+}
+.g1 {
+    background:
+        linear-gradient(var(--key), var(--key)) 100% 0 / 50% 50% no-repeat,
+        var(--ink);
+}
+.g2 {
+    background:
+        linear-gradient(var(--key), var(--key)) 0 0 / 50% 50% no-repeat,
+        var(--ink);
+}
+.g3 {
+    background:
+        linear-gradient(var(--key), var(--key)) 0 0 / 100% 50% no-repeat,
+        var(--ink);
+}
+.g4 {
+    background:
+        linear-gradient(var(--key), var(--key)) 100% 100% / 50% 50% no-repeat,
+        var(--ink);
+}
+.g5 {
+    background:
+        linear-gradient(var(--key), var(--key)) 100% 0 / 50% 100% no-repeat,
+        var(--ink);
+}
+.g6 {
+    background:
+        linear-gradient(var(--key), var(--key)) 0 0 / 50% 50% no-repeat,
+        linear-gradient(var(--key), var(--key)) 100% 100% / 50% 50% no-repeat,
+        var(--ink);
+}
+.g7 {
+    background:
+        linear-gradient(var(--key), var(--key)) 0 0 / 100% 50% no-repeat,
+        linear-gradient(var(--key), var(--key)) 100% 0 / 50% 100% no-repeat,
+        var(--ink);
+}
+.g8 {
+    background: var(--ink);
+}
+
+/* ---------- narrower windows ---------- */
+/* A small TV keeps its buttons and drops the status text first. */
+@container (max-width: 560px) {
+    .tv-brand small,
+    .status {
+        display: none;
+    }
+    .tv-controls {
+        margin-left: auto;
+    }
+}
+@container (max-width: 360px) {
+    .tv-brand {
+        display: none;
+    }
+}
+@media (max-height: 800px) {
+    body {
+        padding-top: 12px;
+        padding-bottom: 12px;
+        row-gap: 16px;
+    }
+    .case {
+        padding-top: 16px;
+        padding-bottom: 14px;
+    }
+    .keyboard-face {
+        width: min(100%, 640px);
+    }
+    .recorder {
+        padding-bottom: 12px;
+    }
+    .plate {
+        margin-bottom: 8px;
+    }
+    .window {
+        height: 92px;
+        padding: 8px 14px;
+    }
+    .cas-window {
+        margin-top: 5px;
+    }
+    .transport {
+        margin: 8px 0;
+    }
+    .pk {
+        height: 42px;
+    }
+}
+/* Narrow windows scroll: the TV gets a fixed height and each page stacks
+   its parts with grid areas. */
+@media (max-width: 1100px) {
+    body {
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+        grid-template-rows: auto;
+        height: auto;
+        min-height: 100%;
+    }
+    .tv-slot {
+        height: min(78vw, 76vh);
+    }
+    .deck {
+        align-self: start;
+    }
+    .case {
+        grid-template-columns: minmax(0, 1fr) minmax(0, 250px);
+        grid-template-areas: "badge dock" "keys keys";
+    }
+}
+@media (max-width: 760px) {
+    body {
+        grid-template-columns: minmax(0, 1fr);
+        padding: 10px;
+    }
+    .tv-slot {
+        height: auto;
+        container-type: normal;
+    }
+    .tv {
+        width: 100%;
+    }
+    .tv-foot {
+        height: auto;
+        flex-wrap: wrap;
+    }
+    .status {
+        order: 3;
+        flex-basis: 100%;
+    }
+    .case {
+        grid-template-columns: minmax(0, 1fr);
+        grid-template-areas: "badge" "keys" "dock";
+    }
+    body:has(#keyboard-toggle:not(:checked)) .dock {
+        flex-wrap: wrap;
+    }
 }

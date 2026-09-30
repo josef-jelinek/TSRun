@@ -27,6 +27,17 @@ const ayRegIoA = 14;
 const ayAmpEnvMode = 0x10;
 const ayMixerPortAOut = 0x40;
 
+/**
+ * The bits each register really has. The AY-3-8912 has no storage for the
+ * rest, so they read back as 0, where a YM2149 returns them as written.
+ *
+ * @type {Uint8Array}
+ */
+const ayRegMasks = Uint8Array.of(
+    0xFF, 0x0F, 0xFF, 0x0F, 0xFF, 0x0F, 0x1F, 0xFF,
+    0x1F, 0x1F, 0x1F, 0xFF, 0xFF, 0x0F, 0xFF, 0xFF,
+);
+
 const ayResetState = {
     noiseLfsr: 1,
     noiseCounter: 0,
@@ -147,13 +158,21 @@ export function aySeek(ay, t) {
 }
 
 /**
+ * Write the register the latched address selects. The low four bits of the
+ * address pick the register and the high four are the chip select, which on a
+ * standard part is mask-programmed as 0000: any other address leaves the chip
+ * deselected, and the write goes nowhere.
+ *
  * @param {Ay} ay
- * @param {number} reg
+ * @param {number} address the whole byte last latched as the register address
  * @param {number} value
  */
-export function ayWriteReg(ay, reg, value) {
-    const addr = reg & 0x0F;
-    ay.regs[addr] = value & 0xFF;
+export function ayWriteReg(ay, address, value) {
+    if ((address & 0xF0) !== 0) {
+        return;
+    }
+    const addr = address & 0x0F;
+    ay.regs[addr] = value & ayRegMasks[addr];
     if (addr === ayRegEnvShape) {
         ayEnvReset(ay);
     }
@@ -161,13 +180,19 @@ export function ayWriteReg(ay, reg, value) {
 }
 
 /**
+ * Read the register the latched address selects. A deselected chip does not
+ * drive the bus, so the read floats high.
+ *
  * @param {Ay} ay
- * @param {number} reg
+ * @param {number} address the whole byte last latched as the register address
  * @param {number} portAIn level held on the I/O port A pins by whatever is wired there
  * @returns {number}
  */
-export function ayReadReg(ay, reg, portAIn) {
-    const addr = reg & 0x0F;
+export function ayReadReg(ay, address, portAIn) {
+    if ((address & 0xF0) !== 0) {
+        return 0xFF;
+    }
+    const addr = address & 0x0F;
     if (addr === ayRegIoA) {
         if ((ay.regs[ayRegMixer] & ayMixerPortAOut) === 0) {
             return portAIn & 0xFF;
@@ -232,10 +257,7 @@ export function ayTakeSample(ay, period, channelA, channelB, channelC, at) {
  */
 function ayAdvanceTo(ay, t, collect) {
     while (t > ay.t) {
-        let next = ay.nextTickT;
-        if (next > t) {
-            next = t;
-        }
+        const next = Math.min(ay.nextTickT, t);
         const dur = next - ay.t;
         const decay = ay.filterDecay[dur];
         const areaScale = ay.filterTauT * (1 - decay);
@@ -260,7 +282,8 @@ function ayAdvanceTo(ay, t, collect) {
 }
 
 /**
- * Clock tone every divider step and noise plus envelope on alternating steps.
+ * One PSG clock after the input divider: the tones step on every tick, and the
+ * noise and the envelope on every other one.
  *
  * @param {Ay} ay
  */
@@ -271,8 +294,9 @@ function ayTick(ay) {
     for (let ch = 0; ch < 3; ch += 1) {
         if (ay.toneCounter[ch] === 0) {
             ay.toneLevel[ch] ^= 1;
-            const half = ayTonePeriod(ay, ch);
-            ay.toneCounter[ch] = half - 1;
+            // A zero period counts as one.
+            const half = (ay.regs[ch * 2 + 1] << 8) | ay.regs[ch * 2];
+            ay.toneCounter[ch] = Math.max(half, 1) - 1;
         } else {
             ay.toneCounter[ch] -= 1;
         }
@@ -280,8 +304,10 @@ function ayTick(ay) {
 
     if (clock16) {
         if (ay.noiseCounter === 0) {
-            ay.noiseCounter = ayNoisePeriod(ay) - 1;
-            ayNoiseTick(ay);
+            ay.noiseCounter = Math.max(ay.regs[ayRegNoise], 1) - 1;
+            const feedback = (ay.noiseLfsr ^ (ay.noiseLfsr >> 3)) & 1;
+            ay.noiseLfsr = (ay.noiseLfsr >> 1) | (feedback << 16);
+            ay.noiseLevel = ay.noiseLfsr & 1;
         } else {
             ay.noiseCounter -= 1;
         }
@@ -330,7 +356,13 @@ function ayEnvReset(ay) {
     ayEnvSetLevel(ay);
 }
 
-/** @param {Ay} ay */
+/**
+ * Advance the envelope one level. At the end of a ramp the shape either holds
+ * at 0 or at the top level, or starts another ramp, reversing when it
+ * alternates.
+ *
+ * @param {Ay} ay
+ */
 function ayEnvStep(ay) {
     const e = ay.env;
     if (e.holding) {
@@ -367,32 +399,6 @@ function ayEnvStep(ay) {
     }
     e.step = 0;
     ayEnvSetLevel(ay);
-}
-
-/** @param {Ay} ay */
-function ayNoiseTick(ay) {
-    const feedback = (ay.noiseLfsr ^ (ay.noiseLfsr >> 3)) & 1;
-    ay.noiseLfsr = (ay.noiseLfsr >> 1) | (feedback << 16);
-    ay.noiseLevel = ay.noiseLfsr & 1;
-}
-
-/**
- * @param {Ay} ay
- * @param {number} ch
- * @returns {number}
- */
-function ayTonePeriod(ay, ch) {
-    const fine = ay.regs[ch * 2];
-    const coarse = ay.regs[ch * 2 + 1] & 0x0F;
-    return Math.max((coarse << 8) | fine, 1);
-}
-
-/**
- * @param {Ay} ay
- * @returns {number}
- */
-function ayNoisePeriod(ay) {
-    return Math.max(ay.regs[ayRegNoise] & 0x1F, 1);
 }
 
 /**

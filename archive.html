@@ -8,221 +8,382 @@
 <title>TSRun Archive Browser</title>
 <style>
 :root {
-    --accent: #F90;
+    --side: 330px;
 }
-header {
-    padding: 10px 20px;
-    font-size: 15px;
+body {
+    grid-template-areas: "catalog tv deck" "case case case";
 }
-.path-clip {
-    flex: 1;
-    min-width: 0;
-    overflow: hidden;
-    direction: rtl;
-    text-align: left;
+/* The recorder keeps the emulator page's width whatever the catalog's, against
+   the right edge of its column. */
+.deck {
+    justify-self: end;
+    width: 290px;
 }
-.path-clip > span {
-    direction: ltr;
-    unicode-bidi: isolate;
-    white-space: nowrap;
-}
-#archive-path {
-    min-height: 1.2em;
-}
-#archive-path-sep {
-    padding: 0 0.55em;
-}
-#archive-path-dir:empty + #archive-path-sep {
-    display: none;
-}
-#archive-path-file.media {
-    color: var(--accent);
-}
-.media-info {
-    flex: 1;
-}
-#tsrun-link {
-    flex-shrink: 0;
-    margin-left: auto;
-    white-space: nowrap;
-}
-#download-file {
-    flex-shrink: 0;
-}
-#workspace {
-    display: flex;
-    flex: 1;
-    flex-direction: row;
-    min-height: 0;
-    background: var(--paper);
-}
-#archive-pane {
+/* ---------- catalog ---------- */
+.catalog {
+    grid-area: catalog;
+    position: relative;
     display: flex;
     flex-direction: column;
-    flex: 0 0 40em;
+    gap: 10px;
     min-width: 0;
     min-height: 0;
-    padding: 0 10px;
+    padding: 12px 14px 14px;
+    border-radius: 7px;
+    background: var(--silver);
+    box-shadow: var(--silver-edge), 0 18px 26px -14px #000;
+    color: var(--print);
 }
-#archive-search {
-    flex-shrink: 0;
-    flex-wrap: nowrap;
-    padding: 8px 0;
-    border-bottom: 1px solid var(--line);
+.catalog .plate {
+    margin-bottom: 0;
 }
-#archive-query {
-    flex: 1;
-    min-width: 0;
-    padding: 5px 8px;
-    border: 1px solid #666;
-    border-radius: var(--control-radius);
-    background: #222;
-    color: var(--ink);
-    outline: none;
+.catalog .plate a {
+    color: var(--print-2);
 }
-#archive-query:focus {
-    border-color: var(--accent);
+.catalog .plate a:hover {
+    color: #000;
 }
-#archive-search .switch {
-    flex-shrink: 0;
+.catalog .plate a::after {
+    content: " \2197";
+    color: var(--red);
 }
-#archive-list {
-    flex: 1;
-    min-width: 0;
-    min-height: 0;
-    overflow: auto;
-    outline: none;
-    font-size: 15px;
-    user-select: none;
-}
-.archive-row {
-    padding: 4px 10px;
-    cursor: pointer;
-    white-space: nowrap;
-    width: max-content;
-    min-width: 100%;
-    box-sizing: border-box;
-}
-.archive-row.media {
-    color: var(--accent);
-}
-#archive-pane:focus-within .archive-row.selected {
-    background: var(--accent);
-    color: #111;
-}
-#archive-pane:not(:focus-within) .archive-row.selected {
-    outline: 1px solid var(--accent);
-    outline-offset: -1px;
-}
+/* The groove along the catalog's right edge is the column split handle, like
+   the keyboard grip in the top edge of the case. */
 #split {
-    flex: 0 0 6px;
+    position: absolute;
+    top: 50%;
+    right: 5px;
+    width: 5px;
+    height: 120px;
+    border-radius: 3px;
+    background: #0000001F;
+    box-shadow: inset 1px 0 1px #00000033;
+    translate: 0 -50%;
     cursor: col-resize;
-    background: var(--line);
     touch-action: none;
 }
 #split:hover,
 body.splitting #split {
-    background: var(--accent);
+    background: var(--red);
+}
+#split::before {
+    content: "";
+    position: absolute;
+    inset: -10px -5px;
 }
 body.splitting {
     user-select: none;
 }
-#screen-slot {
+#archive-search {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+#archive-search .kc {
+    min-width: 80px;
+}
+#archive-query {
+    flex: 1;
+    min-width: 0;
+    height: 36px;
+    padding: 0 10px;
+    border: 0;
+    border-radius: 3px;
+    background: linear-gradient(#262626, #3A3A3A);
+    box-shadow: inset 0 2px 4px #000, 0 1px 0 #FFFFFFB3;
+    color: #EEE;
+    font: 13px var(--font);
+    outline: none;
+}
+#archive-query::placeholder {
+    color: #8A8A8A;
+}
+#archive-query:focus {
+    box-shadow: inset 0 2px 4px #000, 0 0 0 2px var(--red);
+}
+/* The path clips from the left, so the file under the cursor stays in view. */
+.path-clip {
+    min-width: 0;
+    overflow: hidden;
+    direction: rtl;
+    font-size: 11.5px;
+    text-align: left;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.path-clip > span {
+    direction: ltr;
+    unicode-bidi: isolate;
+}
+#archive-path-dir,
+#archive-path-sep {
+    color: var(--print-2);
+}
+#archive-path-sep {
+    padding: 0 0.5em;
+}
+#archive-path-dir:empty + #archive-path-sep {
+    display: none;
+}
+#archive-path-file {
+    font-weight: 700;
+}
+#archive-path-file.media {
+    color: var(--red);
+}
+/* The listing, seen through a dark window like the cassette's */
+.list-window {
     display: flex;
     flex: 1;
-    align-items: flex-start;
-    justify-content: center;
-    box-sizing: border-box;
+    min-height: 120px;
+    padding: 6px 0;
+    border-radius: 6px;
+    background: linear-gradient(#141414, #0A0A0A);
+    box-shadow: inset 0 2px 10px #000, 0 1px 0 #FFFFFFB3, 0 -1px 0 #00000040;
+}
+#archive-list {
+    flex: 1;
     min-width: 0;
-    min-height: 0;
-    padding: 2px;
+    overflow: auto;
     outline: none;
+    color: #CFCFCF;
+    font-size: 12.5px;
+    font-variant-numeric: tabular-nums;
+    user-select: none;
+    scrollbar-color: #5A5A5A transparent;
+    scrollbar-width: thin;
 }
-#screen-slot:fullscreen,
-#screen-slot.screen-only {
-    width: 100%;
-    height: 100%;
-    padding: 0;
+.archive-row {
+    padding: 3px 12px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    cursor: pointer;
+}
+/* Long member paths keep their end in view: the ellipsis goes at the start. */
+.archive-row.path {
+    direction: rtl;
+    text-align: left;
+}
+.archive-row > span {
+    direction: ltr;
+    unicode-bidi: isolate;
+}
+.archive-row.note {
+    white-space: normal;
+    cursor: default;
+}
+.archive-row:hover {
+    background: #FFFFFF14;
+}
+.archive-row.media {
+    color: var(--red);
+}
+/* The folder and size read dimmer than the name, which carries the row. */
+.archive-row .dir {
+    color: #6E6E6E;
+}
+.archive-row .size {
+    color: #8A8A8A;
+}
+.list-window:focus-within .archive-row.selected {
+    background: var(--red);
+    color: #FFF;
+}
+.list-window:focus-within .archive-row.selected .dir,
+.list-window:focus-within .archive-row.selected .size {
+    color: #FFFFFFB3;
+}
+.list-window:not(:focus-within) .archive-row.selected {
+    box-shadow: inset 0 0 0 1px var(--red);
+}
+/* The status line for the listing, on its own row while it has something to
+   say, then Load, Save, and Open in TSRun, which are only enabled for what the
+   cursor is on. */
+.catalog-keys {
+    display: flex;
+    flex-wrap: wrap;
     align-items: center;
-    justify-content: center;
-    background: var(--paper);
+    justify-content: flex-end;
+    gap: 8px;
 }
-#screen {
-    outline: none;
+#archive-info {
+    flex: 1 1 100%;
+    min-width: 0;
+    overflow: hidden;
+    color: var(--print-2);
+    font-size: 11.5px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
-#screen:focus,
-#screen:focus-visible {
-    outline: 1px solid var(--accent);
-    outline-offset: 1px;
+#archive-info.error {
+    color: var(--red);
 }
-#screen-slot:fullscreen #screen:focus,
-#screen-slot:fullscreen #screen:focus-visible,
-#screen-slot.screen-only #screen:focus,
-#screen-slot.screen-only #screen:focus-visible {
-    outline: none;
+#archive-info:empty {
+    display: none;
 }
-#options {
-    flex-shrink: 0;
-    padding: 8px 14px;
-    border-bottom: 1px solid var(--line);
+.catalog-keys .kc {
+    text-decoration: none;
 }
-#status {
-    flex-shrink: 0;
-    padding: 10px 20px;
-    border-top: 1px solid var(--line);
-    font-size: 15px;
+a.kc:not([href]) {
+    color: #00000059;
+    cursor: default;
 }
-@media (max-width: 700px) {
-    #workspace {
-        flex-direction: column;
+/* The folded strip: machine keys over the badge stripe, the grille, and the
+   dock. */
+body:has(#keyboard-toggle:not(:checked)) .case {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    grid-template-areas: "fn grille dock" "brand grille dock";
+}
+@media (max-width: 1100px) {
+    body {
+        grid-template-areas: "tv tv" "catalog deck" "case case";
     }
-    #archive-pane {
-        flex: 0 0 30%;
+    .catalog {
+        height: min(620px, 80vh);
+    }
+    .deck {
+        justify-self: stretch;
         width: auto;
     }
     #split {
-        cursor: row-resize;
+        display: none;
+    }
+}
+@media (max-width: 760px) {
+    body {
+        grid-template-areas: "tv" "catalog" "deck" "case";
+    }
+    /* The folded strip wraps: machine keys, dock, then the stripe. */
+    body:has(#keyboard-toggle:not(:checked)) .case {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: space-between;
+    }
+    body:has(#keyboard-toggle:not(:checked)) .brand {
+        order: 1;
+    }
+    body:has(#keyboard-toggle:not(:checked)) .grille {
+        display: none;
     }
 }
 </style>
 </head>
 <body>
-<div id="options" class="rowbox">
-    <button id="reset">Reset</button>
-    <label class="switch" title="Onscreen keyboard (F1)"><input id="keyboard-toggle" type="checkbox">Keyboard</label>
-    <label class="switch" title="CRT display filter"><input id="crt" type="checkbox" checked>CRT</label>
-    <label class="switch" title="Spread AY channels A/B/C across the stereo image; the hardware is mono"><input id="stereo" type="checkbox">Stereo</label>
-    <button id="fullscreen-toggle" title="Fullscreen (F11)">Fullscreen</button>
-    <label class="switch" title="Start selected tapes with the bundled TS2068 ROM loader"><input id="auto" type="checkbox" checked>Auto</label>
-    <label class="switch"><input id="turbo" type="checkbox" checked>Turbo</label>
-    <button id="play-tape" title="Start or resume tape playback" disabled>Play</button>
-    <div class="media-info"><span id="init-info">Initializing...</span></div>
-    <a id="tsrun-link" style="display: none">Open in TSRun</a>
-    <button id="download-file" style="display: none">Download</button>
-</div>
-<header id="page-header" class="rowbox">
+<svg class="icon-defs" width="0" height="0">
+    <symbol id="i-play" viewBox="0 0 24 24"><path d="M6 4v16l14-8z"/></symbol>
+    <symbol id="i-rew" viewBox="0 0 24 24"><path d="M12 5v14L2 12z"/><path d="M22 5v14l-10-7z"/></symbol>
+    <symbol id="i-ff" viewBox="0 0 24 24"><path d="M2 5v14l10-7z"/><path d="M12 5v14l10-7z"/></symbol>
+</svg>
+<aside id="catalog" class="catalog" aria-label="Archive">
+    <div id="split" title="Drag to resize the catalog"></div>
+    <div class="plate"><b>Software archive</b><span class="fill"></span><a href="https://archive.org/details/timex-sinclair-software-archive">archive.org</a></div>
+    <div id="archive-search">
+        <input id="archive-query" type="text" placeholder="Search titles" spellcheck="false" autocomplete="off">
+        <label class="kc" title="Show only titles tagged for the TS 2068"><input id="ts2068" type="checkbox" checked><b>TS2068</b><i class="led"></i><small>Only</small></label>
+    </div>
     <div class="path-clip"><span id="archive-path"><span id="archive-path-dir"></span><span id="archive-path-sep">/</span><span id="archive-path-file">&nbsp;</span></span></div>
-</header>
-<main id="workspace">
-    <div id="archive-pane">
-        <div id="archive-search" class="rowbox">
-            <input id="archive-query" type="text" spellcheck="false" autocomplete="off">
-            <label class="switch" title="Show only titles tagged for the TS 2068"><input id="ts2068" type="checkbox" checked>TS2068</label>
-        </div>
+    <div class="list-window">
         <div id="archive-list" tabindex="0"></div>
     </div>
-    <div id="split"></div>
-    <div id="screen-slot">
-        <canvas id="screen" width="640" height="240" tabindex="0"></canvas>
+    <div class="catalog-keys">
+        <span id="archive-info"></span>
+        <button id="load-file" class="kc" title="Load the highlighted file, or open the highlighted folder or ZIP; the same as Enter or a second click" disabled><b id="load-file-verb">LOAD</b><small id="load-file-kind">File</small></button>
+        <button id="save-file" class="kc" title="Save the highlighted ZIP or file" disabled><b>SAVE</b><small>File</small></button>
+        <a id="tsrun-link" class="kc" aria-disabled="true"><b>OPEN</b><small>in TSRun</small></a>
     </div>
-</main>
-<div id="status" class="rowbox">
-    <div class="media-info"><span id="sound-info" title="Emulated frames per second (60.1 is real time), then audio an overrun discarded and audio an underrun filled with silence, over the last second"></span> <span id="tape-info">No tape</span></div>
+</aside>
+
+<div class="tv-slot">
+    <section class="tv" aria-label="Screen">
+        <div id="screen-slot">
+            <div class="tube">
+                <canvas id="screen" width="640" height="240" tabindex="0"></canvas>
+            </div>
+        </div>
+        <div class="tv-foot">
+            <div class="tv-brand">TSRun<small>Archive browser</small></div>
+            <div class="status"><span id="init-info">Initializing...</span><span id="sound-info" title="Emulated frames per second (60.1 is real time), then audio an overrun discarded and audio an underrun filled with silence, over the last second"></span></div>
+            <div class="tv-controls">
+                <label class="tv-btn" title="Silence the emulator's sound; it keeps running at the same speed"><input id="muted" type="checkbox"><i class="led"></i><span class="cap"></span>Mute</label>
+                <label class="tv-btn" title="Spread AY channels A/B/C across the stereo image; the hardware is mono"><input id="stereo" type="checkbox"><i class="led"></i><span class="cap"></span>Stereo</label>
+                <label class="tv-btn" title="CRT display filter"><input id="crt" type="checkbox" checked><i class="led"></i><span class="cap"></span>CRT</label>
+                <button id="fullscreen-toggle" class="tv-btn" title="Fullscreen (F11)"><i class="led"></i><span class="cap"></span>Full</button>
+                <label class="tv-btn" title="Pause the emulated machine; press again to continue"><input id="paused" type="checkbox"><i class="led"></i><span class="cap"></span>Pause</label>
+            </div>
+        </div>
+    </section>
 </div>
-<div id="keyboard-split" style="display: none"></div>
-<div id="keyboard" style="display: none">
-    <div class="keyboard-face"></div>
-</div>
+
+<aside class="deck">
+    <nav class="links">
+        <a href="index.html">Emulator</a>
+        <a href="https://github.com/josef-jelinek/TSRun">GitHub</a>
+    </nav>
+    <div id="printout" class="printout" aria-label="Tape contents" hidden>
+        <div class="slip">
+            <div class="slip-head"><b id="printout-name"></b><span id="printout-summary"></span></div>
+            <div id="printout-rows" class="slip-rows">
+                <table>
+                    <colgroup><col class="c-num"><col class="c-block"><col><col class="c-bytes"><col class="c-state"></colgroup>
+                    <thead><tr><th class="num">#</th><th>Block</th><th>Contents</th><th class="num">Bytes</th><th></th></tr></thead>
+                    <tbody id="tape-blocks"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    <section id="recorder" class="recorder" aria-label="Tape" data-state="empty">
+        <div class="plate"><b>TS 2020</b><span class="fill"></span><span>Program recorder</span></div>
+        <div class="window">
+            <div class="cassette">
+                <div class="cas-label"><span class="side-a">A</span><span id="tape-label" class="name"></span></div>
+                <div class="cas-window"><i class="reel"></i><i class="reel"></i></div>
+            </div>
+        </div>
+        <div class="transport">
+            <div id="tape-counter" class="counter" title="Next block"><span>0</span><span>0</span><span>0</span></div>
+            <span id="tape-total" class="counter-note"></span>
+        </div>
+        <div id="tape-info" class="media-info">No tape</div>
+        <div class="piano">
+            <button id="rew-tape" class="pk" title="Rewind to the start of this block, or to the previous block" disabled><svg class="i"><use href="#i-rew"></use></svg>Rew</button>
+            <button id="play-tape" class="pk" title="Start or resume tape playback" disabled><svg class="i"><use href="#i-play"></use></svg><span id="play-tape-label">Play</span></button>
+            <button id="ff-tape" class="pk" title="Fast-forward past the next block" disabled><svg class="i"><use href="#i-ff"></use></svg>FF</button>
+            <label class="pk" title="Start selected tapes with the bundled TS2068 ROM loader"><input id="auto" type="checkbox" checked><i class="led"></i>Auto</label>
+            <label class="pk" title="Run many times faster than real time while the tape plays"><input id="turbo" type="checkbox" checked><i class="led"></i>Turbo</label>
+        </div>
+    </section>
+</aside>
+
+<section class="case" aria-label="Machine">
+    <div id="keyboard-split" title="Drag to resize the keyboard"></div>
+    <div class="badge">
+        <div class="fn-keys">
+            <button id="reset" class="kc" title="Restart the Z80 at address 0; tape and cartridge stay"><b>RESET</b><small>PC 0000</small></button>
+            <label class="kc" title="Onscreen keyboard (F1)"><input id="keyboard-toggle" type="checkbox"><b>KEYS</b><i class="led"></i><small>F1</small></label>
+        </div>
+        <div class="brand">
+            <div class="stripe"><i></i><i></i><i></i></div>
+            <div class="pcc">PERSONAL COLOR COMPUTER</div>
+        </div>
+    </div>
+
+    <div class="grille"></div>
+    <div id="keyboard">
+        <div class="keyboard-face"></div>
+    </div>
+
+    <div class="dock">
+        <div class="door">
+            <div class="door-label"><span>DOCK</span><span>LROS · AROS</span></div>
+            <div class="slot"><div id="cart-info" class="media-info">No cartridge.</div></div>
+        </div>
+        <div class="ports">
+            <div class="port"><i class="dsub"></i><span>Joy 1<small id="joy1-info">No gamepad</small></span></div>
+            <div class="port"><i class="dsub"></i><span>Joy 2<small id="joy2-info">No gamepad</small></span></div>
+        </div>
+    </div>
+</section>
 <script type="module" src="archive.js"></script>
 </body>
 </html>

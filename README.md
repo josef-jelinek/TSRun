@@ -48,6 +48,7 @@ normal defaults:
 | `keyboard` | `0` |
 | `crt` | `1` |
 | `stereo` | `0` |
+| `muted` | `0` |
 | `auto` | `1` |
 | `turbo` | `1` |
 
@@ -89,21 +90,30 @@ does not use it: it fetches unpacked members instead. archive.org ZIP files
 have no CORS; a `#member` fragment on those URLs is fetched as an unpacked
 file rather than as a ZIP.
 
-### Command bar
+### The desk
 
-- Reset - restart the Z80 at address 0. A tape is kept at its current block,
-  which restarts from its leader, and EAR playback pauses until a loader is
-  waiting again. A cartridge is kept and the ROM probes it again (autostart
-  carts re-run).
-- NMI - pulse the Z80 NMI pin (`PC=0x0066`). The stock ROM returns immediately;
-  a program that installed an NMI handler will run it.
-- Keyboard - show or hide the TS 2068 keyboard under the screen (also F1).
-- CRT - fit the display continuously and add rounded pixels, horizontal color
-  bleed and scanlines. When off, the display is unfiltered integer-scaled.
+The page is a TS 2068 on a desk: a TV showing the emulated screen, a TS 2020
+program recorder with a printout of the tape beside it, and the computer case
+below with the onscreen keyboard, the ROM hatch, and the cartridge dock.
+
+The TV:
+
+- Mute - silence the sound. The machine keeps running at the same speed.
 - Stereo - spread the three AY channels across the stereo image. Off by
   default, since the machine mixes everything into one mono output.
-- Fullscreen - show only the fullscreen emulator canvas (also F11).
-- Load Tape - insert a `.tap` or `.tzx`. Playback starts when the stock ROM
+- CRT - fit the display continuously and add rounded pixels, horizontal color
+  bleed and scanlines. When off, the display is unfiltered with sharp pixel
+  edges.
+- Full - show only the emulator screen, fullscreen (also F11).
+- Pause - stop the emulated machine where it is; press it again to continue.
+  A camcorder-style PAUSE caption with the pause bars is drawn into the top
+  border of the picture, so the CRT filter applies to it too. Sound goes quiet
+  and a playing tape stays where it was.
+- The foot of the TV shows startup, sound, and `?url=` status.
+
+The recorder:
+
+- Load - insert a `.tap` or `.tzx`. Playback starts when the stock ROM
   loader or a tight custom EAR polling loop is detected, so the header is not
   missed. With Auto off, at the `K` cursor press J (`LOAD`), then `""` and
   Enter. Border bars still show while the block loads. TZX
@@ -111,26 +121,58 @@ file rather than as a ZIP.
   signal-level, and control-flow blocks, with loops and jumps followed as the
   tape plays; CSW, generalized-data, and Select blocks are rejected. A
   cartridge already in the dock is left mapped.
-- Auto - when checked (the default), reset the bundled TS2068 ROMs directly
+- Play - manually start a ready tape, or resume after a TZX stop block, when
+  the key reads Resume. This is a fallback for loading routines whose EAR
+  access pattern cannot be detected.
+- Rew - back to the start of the block being loaded, or to the previous block
+  when none is under way; from the end of the tape, back to its last block.
+- FF - past the block shown as next, or the one being loaded. Rew and FF
+  move the tape without resetting the machine, so a loader waiting at
+  `LOAD ""` picks the tape up from the new block. In a TZX, moving the tape
+  this way leaves any loop or call it was in.
+- Auto - when down (the default), reset the bundled TS2068 ROMs directly
   into their tape loader when a tape is selected. With custom ROMs or a
   cartridge inserted, Auto leaves the machine running and falls back to normal
   loader detection or Play.
-- Play - manually start a ready tape, or resume after a TZX stop block. This is
-  a fallback for loading routines whose EAR access pattern cannot be detected.
-- Turbo - on the tape row. When checked (the default), CPU and tape run many
+- Turbo - when down (the default), CPU and tape run many
   times faster than realtime while the tape is playing, including TZX pauses.
-  Uncheck for ROM-speed playback with the leader tone. T-state custom loaders
+  Release it for ROM-speed playback with the leader tone. T-state custom loaders
   warp as well; this is not an instant ROM poke. Warped frames are not drawn
   or mixed. After each burst the frames the tape landed on are painted and
   mixed, as many as the audio queue has room for, so the loader stays audible
   as a run of snippets while the tape warps past.
-- Load Cart - insert a `.dck` dock image and reset so the ROM can autostart
-  LROS/AROS. Extra 8K chunks are paged by the program with `OUT 244`.
-- Eject - on the cartridge row, after Load Cart. Unplugs the cartridge, restores any
-  HOME-bank RAM pages the image overwrote, and resets so the ROM no longer
+- The counter shows the block that plays next, and `END` once every block
+  has played. The reels turn while the tape plays.
+
+The printout above the recorder lists the tape's blocks the way `LOAD` reports
+them: each ROM header with its type and name (`Program: name`, `Bytes: name`,
+or an array), and the block after it as `BASIC, LINE n`, `CODE start,length`,
+or `DATA a()`. Byte counts leave out the flag and checksum bytes. Turbo, tone,
+pulse, pure-data, and direct-recording TZX blocks keep their own kinds. Blocks
+are marked `done`, `next`, or `load` while loading, and the list scrolls to
+keep that row in view. Loops and jumps in a TZX move the mark back as they
+move the tape.
+
+The case:
+
+- Reset - restart the Z80 at address 0. A tape is kept at its current block,
+  which restarts from its leader, and EAR playback pauses until a loader is
+  waiting again. A block that has already loaded is not played again: the
+  tape moves on to the block after it. A cartridge is kept and the ROM probes
+  it again (autostart carts re-run).
+- NMI - pulse the Z80 NMI pin (`PC=0x0066`). The stock ROM returns immediately;
+  a program that installed an NMI handler will run it.
+- Keys - show or hide the onscreen keyboard (also F1). With the keyboard
+  hidden, the case folds into a strip so the TV gets the room.
+- ROM hatch, Load ROM0 - replace the 16K HOME ROM from a `.rom` / `.bin` file
+  and reset. Load ROM1 replaces the 8K EXROM the same way.
+- Dock, Load - insert a `.dck` dock image and reset so the ROM can autostart
+  LROS/AROS. Extra 8K chunks are paged by the program with `OUT 244`. The slot
+  shows the cartridge and the chunks it maps.
+- Dock, Eject - enabled with a cartridge in. Unplugs the cartridge, restores
+  any HOME-bank RAM pages the image overwrote, and resets so the ROM no longer
   sees dock memory.
-- Load ROM0 - replace the 16K HOME ROM from a `.rom` / `.bin` file and reset.
-- Load ROM1 - replace the 8K EXROM the same way.
+- Joy 1 and Joy 2 name the gamepad on each joystick port.
 
 Reset does not eject a tape or cartridge. After Eject, or with no cartridge, the
 ROM should return to the copyright start screen.
@@ -141,17 +183,17 @@ the screen is focused.
 
 ## Archive browser
 
-`archive.html` is a second page: the [Timex Sinclair Software Archive](https://archive.org/details/timex-sinclair-software-archive) on the left and the emulator on the right. There are no local tape, cartridge, or ROM pickers, and no NMI or Eject controls.
+`archive.html` is a second page: a catalog of the [Timex Sinclair Software Archive](https://archive.org/details/timex-sinclair-software-archive) on the left of the same desk, TV, recorder, and case as the emulator page. There are no local tape, cartridge, or ROM pickers, and no NMI or Eject controls.
 
-The list starts as first-letter buckets of the ZIP titles (case-insensitive). A search field above the list filters those titles as you type (case-insensitive substring). With a query entered, matching ZIPs are listed directly, skipping the letter buckets. Opening a ZIP shows every member; the search does not filter inside the archive. The **TS2068** switch next to the field is on by default and keeps only titles tagged for the TS 2068; turn it off to show the whole archive with no machine filter. `?ts2068=0` starts with that switch off. Open a letter, then a ZIP, then a TAP, TZX, or DCK. TAP, TZX, and DCK members are shown in the accent color. `..` goes up one level. A mouse click highlights a row; a later click on that same row opens it. Arrow keys, Page Up/Down, Home, End, and Enter navigate when the list is focused. The same arrows, Page Up/Down, and Enter work while the search field is focused; Enter also moves focus to the list. Host keys reach the emulator only while the screen is focused; that is intentional, so list navigation does not type into the machine. Members are fetched from archive.org's unpacked download URLs (those allow CORS). The ZIP bytes themselves are not downloaded, and `zip.js` is not used on this page.
+The list starts as first-letter buckets of the ZIP titles (case-insensitive). A search field above the list filters those titles as you type (case-insensitive substring). With a query entered, matching ZIPs are listed directly, skipping the letter buckets. Opening a ZIP shows every member; the search does not filter inside the archive. The **TS2068** switch next to the field is on by default and keeps only titles tagged for the TS 2068; turn it off to show the whole archive with no machine filter. `?ts2068=0` starts with that switch off. Open a letter, then a ZIP, then a TAP, TZX, or DCK. TAP, TZX, and DCK members are shown in the accent color. Inside a ZIP, a member's folder and size read dimmer than its name, and a long path is shortened at its start so the name stays in view. `..` goes up one level. A mouse click highlights a row; a later click on that same row opens it. Arrow keys, Page Up/Down, Home, End, and Enter navigate when the list is focused. The same arrows, Page Up/Down, and Enter work while the search field is focused; Enter also moves focus to the list. Host keys reach the emulator only while the screen is focused; that is intentional, so list navigation does not type into the machine. Members are fetched from archive.org's unpacked download URLs (those allow CORS). The ZIP bytes themselves are not downloaded, and `zip.js` is not used on this page.
 
-The top path follows the list cursor: the current ZIP (and folder) in the normal text color, then a TAP, TZX, or DCK name in the accent color. It updates as you move, including over a file that has not been loaded yet. **Open in TSRun** and **Download** sit on the right of the options bar. Download is shown for a highlighted ZIP or any file inside one. Open in TSRun appears when the cursor is on a TAP, TZX, or DCK and links to `index.html?url=` with the ZIP URL and a `#member` fragment, encoded the same way as the emulator page's `url` parameter:
+The path under the search field follows the list cursor: the current ZIP (and folder) in the normal text color, then a TAP, TZX, or DCK name in the accent color. It updates as you move, including over a file that has not been loaded yet, and a long path is shortened at its start. **Load**, **Save**, and **Open in TSRun** sit under the list. Load does what Enter or a second click does, and its label says what that is for the highlighted row: Open group, Open parent, or Open zip, or Load tap, Load tzx, or Load dck. It is disabled on files it cannot load. Save is enabled for a highlighted ZIP or any file inside one. Open in TSRun is enabled when the cursor is on a TAP, TZX, or DCK and links to `index.html?url=` with the ZIP URL and a `#member` fragment, encoded the same way as the emulator page's `url` parameter:
 
 ```text
 index.html?url=https%3A%2F%2Farchive.org%2Fdownload%2Ftimex-sinclair-software-archive%2Fgame.zip%23folder%2Fgame.tzx
 ```
 
-Reset, Keyboard, CRT, Stereo, Fullscreen, Auto, Turbo, and Play sit in the bar above the path and mean the same as on `index.html`. Tape and sound status sit in a bar above the on-screen keyboard. Drag the divider between the list and the emulator to resize them. The same `keyboard`, `crt`, `stereo`, `auto`, `turbo`, and `rom` URL parameters as the emulator page apply; `ts2068` is archive-only.
+Reset, Keys, CRT, Stereo, Full, Auto, Turbo, and Play mean the same as on `index.html`, and so do the counter and the printout. Listing errors show under the list, tape status on the recorder, and a cartridge opened from the catalog in the dock. Drag the grip in the catalog's right edge to resize it; the column across the TV widens with it, so the TV stays centered over the keyboard, while the recorder keeps its width. In narrow windows the parts stack and the grip is hidden. The same `keyboard`, `crt`, `stereo`, `auto`, `turbo`, and `rom` URL parameters as the emulator page apply; `ts2068` is archive-only.
 
 Selecting a tape ejects any cartridge first, then inserts the tape, so Auto can enter the bundled ROM loader. That differs from `index.html` on purpose: the emulator page keeps dock memory when a tape is loaded. If a cartridge was mapped and Auto does not run, the machine is reset after the eject.
 
@@ -169,12 +211,12 @@ stops a refresh rate that does not divide into 60.1145 Hz from running the
 machine fast. Two frames of slack absorb a late refresh or a collection pause;
 the cost is that `BEEP` and tape edges are heard about 35 ms late.
 
-The status line beside the tape info reports what that is doing, once a second:
+The status line in the TV's foot reports what that is doing, once a second:
 emulated frames per second, then audio an overrun discarded and silence an
 underrun had to fill. At speed it reads about `60.1 fps, cut 0 ms, gap 0 ms`;
 frames per second well above 60.1 means the frame loop is running the machine
 too fast, and a standing cut or gap means production and playback have drifted
-apart.
+apart. The queue running dry while the TV is paused is not counted as gap.
 
 Both sources are integrated on the CPU clock. The AY runs on its own tick grid
 (one tick per 16 T-states) rather than on the output sample rate, and every
@@ -188,7 +230,9 @@ put it. The tied AY outputs and SCLD output are weighted by their schematic
 one-pole, as the speaker and the TV audio input are: the chips put out unipolar
 levels, and without it a voice falling silent steps the output by its own offset
 instead of returning to rest.
-`BEEP` uses the ULA; `SOUND register,value` talks to the AY. Tape EAR is mixed
+`BEEP` uses the ULA; `SOUND register,value` talks to the AY. As on the
+AY-3-8912, unused register bits read back as 0, and an address above 15 on port
+`F5` deselects the chip until a valid one is written. Tape EAR is mixed
 quietly so loading can be heard; this monitor is an emulator convenience rather
 than part of the amplifier path. The machine sums the three AY channels and the
 beeper into one analog output, so the default here is mono as well. The Stereo
@@ -215,13 +259,16 @@ Extra mappings:
 - Tab - EDIT (Caps Shift + 1)
 - `.` `,` `;` `"` `-` `=` `/` - the usual Symbol Shift pairs
 
-**F1** or the Keyboard switch shows or hides the original TS 2068 keyboard
-(`keyboard.png`) under the screen. The emulator display scales to the remaining
-space. Overlay keys can be clicked; they invert when the matching matrix bits
-are down.
+**F1** or the Keys key shows or hides the TS 2068 keyboard in the case, with
+its legends as printed on the machine, including the color names and the
+block graphics. Drag the grip on the top edge of the case to resize it; the TV
+gives way. The keyboard stops shrinking once the case can get no shorter. Keys can be clicked or touched, several at once, and show as pressed
+while the matching matrix bits are down, whether from the host keyboard or the
+screen.
 
-**F11** or the Fullscreen button makes the page fullscreen with only the
-emulator canvas (4:3, integer scaled). Escape or F11 again restores the header.
+**F11** or the Full button makes the page fullscreen with only the emulator
+screen (4:3, with sharp pixels without the CRT filter). Escape or F11 again
+restores the page.
 
 ## Joysticks
 
@@ -237,16 +284,23 @@ player 2 whichever slots they occupy, so a single pad always drives player 1. A
 direction is on when the matching d-pad button is down or the left stick is
 pushed past halfway, and any face or shoulder button is the fire button. A
 browser only reports a pad once it has been used, so press one of its buttons
-first if nothing responds.
+first if nothing responds. The joystick ports on the case name the pad driving
+each one, or show "No gamepad".
 
 ## Display
 
 The visible picture is the SCLD output: 256x192 paper (512x192 in hi-res) with
-a border, integer-scaled to a 4:3 rectangle in the window.
+a border, scaled to fill the largest 4:3 rectangle in the TV. Without the CRT
+filter the picture is drawn at the physical display resolution with each
+display pixel taking the nearest frame pixel, so pixel edges stay sharp at any
+size and pixel sizes differ by at most one display pixel. The fit follows
+browser zoom and moves between monitors.
 
 The optional CRT mode fills the available 4:3 area and renders at the physical
 display resolution. It adds restrained horizontal color bleed and scanlines,
-without distortion, chromatic aberration, bloom, noise or a vignette.
+without distortion, chromatic aberration, bloom, noise or a vignette. Its beam
+filtering and scanline intensity work in linear light, with sRGB encoding at
+output, so color edges and the gaps between scanlines do not darken.
 
 The picture is drawn by following the beam rather than by grabbing the display
 file once per frame. The raster is free-running at 224 T-states per line and
@@ -277,7 +331,7 @@ beam renders as bars that break mid-line, as on hardware. Bit 6 of port `FF` inh
 ## Repository files
 
 - `README.md` - project overview and user documentation.
-- `app.css` - shared controls, keyboard overlay, and base chrome for both pages.
+- `app.css` - shared look of both pages: the TV, recorder, printout, case, and keyboard.
 - `index.html` - emulator page markup and page-specific styles.
 - `main.js` - emulator page: local tape, cart, and ROM pickers, and `?url=` loading.
 - `archive.html` - archive browser page markup and page-specific styles.
@@ -288,10 +342,10 @@ beam renders as bars that break mid-line, as on hardware. Bit 6 of port `FF` inh
 - `io.js` - HTTP GET and local file reads.
 - `machine.js` - memory map, Timex paging ports, and frame run.
 - `z80.js` - Z80 CPU.
-- `keyboard.js` - host keyboard mapping and the F1 overlay.
-- `keyboard.png` - TS 2068 keyboard art for the overlay.
-- `joystick.js` - host gamepads read as the two TS 2068 joystick ports.
-- `tape.js` - TAP/TZX files and cassette EAR pulses.
+- `keyboard.js` - host keyboard mapping and the onscreen keyboard (F1).
+- `keyboard.png` - TS 2068 keyboard art, the reference for the onscreen keyboard; the pages do not use it.
+- `joystick.js` - host gamepads read as the two TS 2068 joystick ports, and their names.
+- `tape.js` - TAP/TZX files, block listings, and cassette EAR pulses.
 - `dock.js` - Warajevo `.dck` cartridge parse.
 - `zip.js` - ZIP listing and entry extraction used by `load.js` for `?url=` ZIP files. The archive page does not use it.
 - `media.js` - tape, cartridge, and junk file-name rules.

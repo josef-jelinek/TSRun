@@ -12,6 +12,8 @@ const tzxHeaderSize = 10;
 const tzxMaxSteps = 100000;
 const tzxMaxPulses = 4194304;
 const tzxMaxNesting = 64;
+// What LOAD prints for header types 0 to 3.
+const headerTypeNames = ["Program", "Number array", "Character array", "Bytes"];
 
 // Stands in as the current block until a tape is inserted, so playback never
 // has to test for one that is not there.
@@ -20,9 +22,11 @@ const silentBlock = emptyBlock(0, false);
 /**
  * One recorded block. A TAP block uses the ROM timings; a TZX block can
  * change any of them, leave parts out, or force an absolute signal level.
- * Durations are in T-states.
+ * Durations are in T-states. `id` is the TZX block ID it came from, 0x10 for a
+ * TAP block.
  *
  * @typedef {{
+ *   id:          number,
  *   pulses:      number[],
  *   pilotT:      number,
  *   pilotPulses: number,
@@ -50,11 +54,16 @@ const silentBlock = emptyBlock(0, false);
  * start on the next loader attempt, "playing" while it advances, "blocked" when
  * a stop block has halted it until the loader lets go, and "done" once a loaded
  * tape has played out. Only "ready" and "blocked" hold a tape that a loader can
- * still start.
+ * still start. `blocksBefore[i]` counts the play entries before entry `i`, so a
+ * position in the program maps to a row of the tape's block listing, and
+ * `playEntries[row]` is the entry a listing row plays.
  *
  * @typedef {{
- *   entries:    TzxEntry[],
- *   blockCount: number,
+ *   entries:      TzxEntry[],
+ *   format:       "" | "TAP" | "TZX",
+ *   blockCount:   number,
+ *   blocksBefore: Int32Array,
+ *   playEntries:  Int32Array,
  *   state:      "empty" | "ready" | "playing" | "blocked" | "done",
  *   level:      number,
  *   holdLevel:  boolean,
@@ -69,7 +78,21 @@ const silentBlock = emptyBlock(0, false);
  */
 
 /**
- * @typedef {{err: string} | {err: null, entries: TzxEntry[]}} TapeParse
+ * @typedef {{err: string} | {err: null, entries: TzxEntry[], format: "TAP" | "TZX"}} TapeParse
+ */
+
+/**
+ * One row of a tape's block listing: the kind of block, what LOAD reports for
+ * it, and the bytes a loader receives. `bytes` is null for a block that carries
+ * no data, such as a tone or a direct recording.
+ *
+ * @typedef {{kind: string, contents: string, bytes: number | null}} BlockRow
+ */
+
+/**
+ * The fields of a 17-byte ROM tape header that describe the block after it.
+ *
+ * @typedef {{type: number, length: number, param1: number}} RomHeader
  */
 
 /**
@@ -107,31 +130,38 @@ const silentBlock = emptyBlock(0, false);
  * to play.
  *
  * @param {TzxEntry[] | null} entries
+ * @param {"" | "TAP" | "TZX"} format
  * @param {number} tstates
  * @returns {Tape}
  */
-export function createTape(entries, tstates) {
+export function createTape(entries, format, tstates) {
+    const program = entries ?? [];
     /** @type {Tape} */
     const tape = {
-        entries:    entries ?? [],
-        blockCount: 0,
-        state:      "empty",
-        level:      0,
-        holdLevel:  false,
-        nextT:      tstates,
-        pc:         0,
-        loops:      [],
-        calls:      [],
-        block:      silentBlock,
-        phase:      "start",
-        pulseI:     0,
+        entries:      program,
+        format,
+        blockCount:   0,
+        blocksBefore: new Int32Array(program.length + 1),
+        playEntries:  new Int32Array(program.length),
+        state:        "empty",
+        level:        0,
+        holdLevel:    false,
+        nextT:        tstates,
+        pc:           0,
+        loops:        [],
+        calls:        [],
+        block:        silentBlock,
+        phase:        "start",
+        pulseI:       0,
     };
-    if (entries !== null && entries.length > 0) {
+    if (program.length > 0) {
         tape.state = "ready";
-        for (const entry of entries) {
-            if (entry.kind === "play") {
+        for (let i = 0; i < program.length; i += 1) {
+            if (program[i].kind === "play") {
+                tape.playEntries[tape.blockCount] = i;
                 tape.blockCount += 1;
             }
+            tape.blocksBefore[i + 1] = tape.blockCount;
         }
         tape.holdLevel = true;
         if (!runProgram(tape, 0)) {
@@ -139,6 +169,126 @@ export function createTape(entries, tstates) {
         }
     }
     return tape;
+}
+
+/**
+ * The listing row of the block playing now or next: 0 with no tape, and
+ * blockCount once every block has played. A block counts as played once its
+ * data is through, so a tape stopped in the pause after its last block reads
+ * as played out. Loops and jumps move it back, as they move the tape.
+ *
+ * @param {Tape} tape
+ * @returns {number}
+ */
+export function nextBlock(tape) {
+    switch (tape.state) {
+    case "empty":
+        return 0;
+    case "done":
+        return tape.blockCount;
+    default:
+        break;
+    }
+    const row = tape.blocksBefore[tape.pc];
+    if (tape.entries[tape.pc].kind === "play" && (tape.phase === "tail" || tape.phase === "pause")) {
+        return row + 1;
+    }
+    return row;
+}
+
+/**
+ * Rewind to the start of the block under way, or to the previous block when
+ * none is under way, as a previous-track button does. From the end of the
+ * tape this cues the last block.
+ *
+ * @param {Tape} tape
+ */
+export function rewindBlock(tape) {
+    let row = nextBlock(tape);
+    if (!blockUnderWay(tape)) {
+        row -= 1;
+    }
+    cueBlock(tape, Math.max(row, 0));
+}
+
+/**
+ * Fast-forward past the block shown as next, or the one under way. Past the
+ * last block the tape has played out.
+ *
+ * @param {Tape} tape
+ */
+export function forwardBlock(tape) {
+    cueBlock(tape, Math.min(nextBlock(tape) + 1, tape.blockCount));
+}
+
+/**
+ * Position the tape at the start of a listing row, ready for the next loader.
+ * A cue leaves any TZX loop or call the tape was in, and a row past the last
+ * one leaves the tape played out.
+ *
+ * @param {Tape} tape
+ * @param {number} row
+ */
+export function cueBlock(tape, row) {
+    if (tape.state === "empty") {
+        return;
+    }
+    tape.phase = "start";
+    tape.pulseI = 0;
+    tape.level = 0;
+    tape.holdLevel = true;
+    tape.loops = [];
+    tape.calls = [];
+    if (row >= tape.blockCount) {
+        tape.state = "done";
+        return;
+    }
+    tape.pc = tape.playEntries[row];
+    const entry = tape.entries[tape.pc];
+    if (entry.kind === "play") {
+        tape.block = entry.block;
+    }
+    tape.state = "ready";
+}
+
+/**
+ * One listing row per played block, in tape order. A ROM header names the
+ * block after it, the way LOAD reports it, when that block has the length the
+ * header promised.
+ *
+ * @param {TzxEntry[]} entries
+ * @returns {BlockRow[]}
+ */
+export function describeBlocks(entries) {
+    /** @type {BlockRow[]} */
+    const rows = [];
+    /** @type {RomHeader | null} */
+    let header = null;
+    for (const entry of entries) {
+        if (entry.kind !== "play") {
+            continue;
+        }
+        const block = entry.block;
+        switch (block.id) {
+        case 0x12:
+            rows.push({kind: "Tone", contents: block.pilotPulses + " pulses", bytes: null});
+            header = null;
+            break;
+        case 0x13:
+            rows.push({kind: "Pulses", contents: block.pulses.length + " pulses", bytes: null});
+            header = null;
+            break;
+        case 0x15:
+            rows.push({kind: "Rec", contents: "direct recording", bytes: null});
+            header = null;
+            break;
+        default:
+            rows.push(describeData(block, header));
+            header = readHeader(block.data);
+            break;
+        }
+    }
+    return rows;
 }
 
 /**
@@ -158,14 +308,20 @@ export function parseTape(bytes) {
 /**
  * Stop a machine reset's tape where it is and restart the block it was playing.
  * The position is kept, but the ROM loader needs a leader to lock onto, so
- * resuming in the middle of the data would never load. A tape that has played
- * out stays played out.
+ * resuming in the middle of the data would never load. A block whose data is
+ * through has already loaded, with only its final pulse or pause left, so the
+ * tape moves on to the next block instead of playing it again. A tape that has
+ * played out stays played out.
  *
  * @param {Tape} tape
  */
 export function resetTape(tape) {
     if (tape.state === "ready" || tape.state === "playing" || tape.state === "blocked") {
         tape.state = "ready";
+        const loaded = tape.entries[tape.pc].kind === "play" && (tape.phase === "tail" || tape.phase === "pause");
+        if (loaded && !runProgram(tape, tape.pc + 1)) {
+            tape.state = "done";
+        }
     }
     tape.level = 0;
     tape.holdLevel = true;
@@ -280,7 +436,7 @@ function parseTap(u8) {
     if (entries.length === 0) {
         return {err: "TAP has no blocks."};
     }
-    return {err: null, entries};
+    return {err: null, entries, format: "TAP"};
 }
 
 /**
@@ -303,6 +459,9 @@ function parseTzx(u8) {
         const read = readTzxBlock(u8, i + 1, id);
         if (read.err !== null) {
             return {err: read.err};
+        }
+        if (read.entry.kind === "play" || read.entry.kind === "command") {
+            read.entry.block.id = id;
         }
         entries.push(read.entry);
         i = read.next;
@@ -670,7 +829,7 @@ function checkTzxProgram(entries) {
     // Low, per the TZX current-pulse-level convention: the first pulse is low
     // and its transition comes after that pulse, not at the start of the tape.
     // This is the level a level-sensitive block sees with no 0x2B before it.
-    return {err: null, entries};
+    return {err: null, entries, format: "TZX"};
 }
 
 /** @param {Tape} tape */
@@ -974,6 +1133,7 @@ function standardBlock(data, pause) {
         pilotPulses = pilotHeader;
     }
     const block = emptyBlock(pause, false);
+    block.id = 0x10;
     block.pilotT = pilotT;
     block.pilotPulses = pilotPulses;
     block.sync1T = sync1T;
@@ -994,6 +1154,7 @@ function standardBlock(data, pause) {
  */
 function emptyBlock(pause, stop) {
     return {
+        id: 0,
         pulses: [],
         pilotT: 0,
         pilotPulses: 0,
@@ -1008,6 +1169,166 @@ function emptyBlock(pause, stop) {
         startLevel: null,
         endPulse: false,
     };
+}
+
+/**
+ * Whether a block is partway through playing: past its start but not yet
+ * through its data. A block in its tail or pause has loaded.
+ *
+ * @param {Tape} tape
+ * @returns {boolean}
+ */
+function blockUnderWay(tape) {
+    if (tape.state === "empty" || tape.state === "done" || tape.entries[tape.pc].kind !== "play") {
+        return false;
+    }
+    switch (tape.phase) {
+    case "start":
+    case "tail":
+    case "pause":
+        return false;
+    default:
+        return true;
+    }
+}
+
+/**
+ * Describe a block that carries data. Standard-speed blocks are "Header" or
+ * "Data"; turbo and pure-data blocks keep their own kind but are still named
+ * from a ROM header when they hold one or follow one.
+ *
+ * @param {TapeBlock} block
+ * @param {RomHeader | null} header the header block just before this one
+ * @returns {BlockRow}
+ */
+function describeData(block, header) {
+    const data = block.data;
+    const standard = block.id === 0x10;
+    let kind = "Data";
+    switch (block.id) {
+    case 0x11:
+        kind = "Turbo";
+        break;
+    case 0x14:
+        kind = "Pure";
+        break;
+    default:
+        break;
+    }
+    const own = readHeader(data);
+    let contents = "";
+    /** @type {number | null} */
+    let bytes = data.length;
+    let romFormat = standard;
+    if (own !== null) {
+        if (standard) {
+            kind = "Header";
+        }
+        contents = headerTypeNames[own.type] + ": " + headerName(data);
+        bytes = 17;
+        romFormat = true;
+    } else if (header !== null && data.length === header.length + 2 && data[0] === 0xFF) {
+        contents = headerContents(header);
+        bytes = header.length;
+        romFormat = true;
+    } else if (standard) {
+        bytes = Math.max(data.length - 2, 0);
+        if (data.length > 0 && data[0] === 0xFF) {
+            contents = "no header";
+        } else if (data.length > 0) {
+            contents = "flag 0x" + data[0].toString(16).toUpperCase().padStart(2, "0");
+        }
+    }
+    if (romFormat && !checksumOk(data)) {
+        if (contents !== "") {
+            contents += ", ";
+        }
+        contents += "bad checksum";
+    }
+    return {kind, contents, bytes};
+}
+
+/**
+ * The fields of a ROM tape header block (flag 0x00, 17 bytes, checksum), or
+ * null when the data is not one.
+ *
+ * @param {Uint8Array} data
+ * @returns {RomHeader | null}
+ */
+function readHeader(data) {
+    if (data.length !== 19 || data[0] !== 0x00 || data[1] > 3) {
+        return null;
+    }
+    return {type: data[1], length: u16(data, 12), param1: u16(data, 14)};
+}
+
+/**
+ * The 10-character file name of a header block, with trailing spaces removed.
+ * The TS 2068 character set puts the pound sign at 0x60 and the copyright sign
+ * at 0x7F.
+ *
+ * @param {Uint8Array} data
+ * @returns {string}
+ */
+function headerName(data) {
+    let name = "";
+    for (let i = 2; i < 12; i += 1) {
+        const ch = data[i];
+        switch (ch) {
+        case 0x60:
+            name += "\u00A3";
+            break;
+        case 0x7F:
+            name += "\u00A9";
+            break;
+        default:
+            if (ch >= 0x20 && ch < 0x7F) {
+                name += String.fromCharCode(ch);
+            } else {
+                name += "?";
+            }
+            break;
+        }
+    }
+    return name.trimEnd();
+}
+
+/**
+ * What the ROM loads from the data block a header describes.
+ *
+ * @param {RomHeader} header
+ * @returns {string}
+ */
+function headerContents(header) {
+    // An array header keeps the variable name in the high byte of param1.
+    const letter = String.fromCharCode(0x60 + ((header.param1 >> 8) & 0x1F));
+    switch (header.type) {
+    case 0:
+        if (header.param1 < 32768) {
+            return "BASIC, LINE " + header.param1;
+        }
+        return "BASIC";
+    case 1:
+        return "DATA " + letter + "()";
+    case 2:
+        return "DATA " + letter + "$()";
+    default:
+        return "CODE " + header.param1 + "," + header.length;
+    }
+}
+
+/**
+ * The flag, payload, and checksum of a ROM block XOR to zero.
+ *
+ * @param {Uint8Array} data
+ * @returns {boolean}
+ */
+function checksumOk(data) {
+    let sum = 0;
+    for (const b of data) {
+        sum ^= b;
+    }
+    return sum === 0;
 }
 
 /**

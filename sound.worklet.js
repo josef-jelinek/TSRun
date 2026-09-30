@@ -28,6 +28,8 @@ const dcBlockPole = 1 - 2 * Math.PI * dcBlockHz / sampleRate;
  * @typedef {{type: "reset"}
  *     | {type: "queue-samples", low: number, cap: number}
  *     | {type: "pan", near: number, center: number, far: number}
+ *     | {type: "mute", on: boolean}
+ *     | {type: "pause", on: boolean}
  *     | ({type: "data"} & WorkletChunk)
  * } WorkletMessage
  */
@@ -36,6 +38,7 @@ const dcBlockPole = 1 - 2 * Math.PI * dcBlockHz / sampleRate;
  * @typedef {{
  *   chunks: WorkletChunk[],
  *   head: number,
+ *   released: number,
  *   offset: number,
  *   waiting: boolean,
  *   waitSamples: number,
@@ -56,6 +59,7 @@ const dcBlockPole = 1 - 2 * Math.PI * dcBlockHz / sampleRate;
  *   transitionFromR: number,
  *   transitionFrames: number,
  *   fadeInPending: boolean,
+ *   paused: boolean,
  *   dcInL: number,
  *   dcOutL: number,
  *   dcInR: number,
@@ -70,6 +74,7 @@ function TSRunProcessor() {
     const p = /** @type {WorkletProc} */ (Reflect.construct(AudioWorkletProcessor, [], TSRunProcessor));
     p.chunks = [];
     p.head = 0;
+    p.released = 0;
     p.offset = 0;
     p.waiting = false;
     p.waitSamples = 0;
@@ -92,6 +97,7 @@ function TSRunProcessor() {
     p.transitionFromR = 0;
     p.transitionFrames = 0;
     p.fadeInPending = true;
+    p.paused = false;
     p.dcInL = 0;
     p.dcOutL = 0;
     p.dcInR = 0;
@@ -122,10 +128,9 @@ registerProcessor("tsrun-out", TSRunProcessor);
 function handleMessage(p, data) {
     switch (data.type) {
     case "reset":
-        releaseChunks(p, p.chunks.length);
-        p.chunks = [];
-        p.head = 0;
-        p.offset = 0;
+        // Everything queued counts as played.
+        p.head = p.chunks.length;
+        dropPlayed(p);
         p.waiting = false;
         beginTransition(p);
         p.fadeInPending = true;
@@ -144,12 +149,26 @@ function handleMessage(p, data) {
             p.panFar = data.far;
         }
         return;
+    case "mute":
+        // Only the output gains change, so the queue keeps draining at the
+        // same pace and the machine runs on unchanged.
+        beginTransition(p);
+        p.ayGain = ayPathGain;
+        p.ulaGain = ulaPathGain;
+        if (data.on) {
+            p.ayGain = 0;
+            p.ulaGain = 0;
+        }
+        return;
+    case "pause":
+        p.paused = data.on;
+        return;
     case "data":
         p.receivedSamples += data.length;
         p.chunks.push({samples: data.samples, length: data.length});
         trimOldAudio(p);
         p.waiting = false;
-        request(p, 128);
+        request(p);
         return;
     }
 }
@@ -170,7 +189,10 @@ function process(p, output) {
                 p.fadeInPending = true;
             }
             fillSilence(p, ol, or, i, n);
-            p.gapSamples += n - i;
+            // A producer that stopped on purpose leaves no gap.
+            if (!p.paused) {
+                p.gapSamples += n - i;
+            }
             break;
         }
         const chunk = p.chunks[p.head];
@@ -205,13 +227,7 @@ function process(p, output) {
         if (p.offset >= chunkLength) {
             p.head += 1;
             p.offset = 0;
-            if (p.head >= p.chunks.length) {
-                releaseChunks(p, p.chunks.length);
-                p.chunks = [];
-                p.head = 0;
-            } else if (p.head > 8) {
-                compact(p);
-            }
+            dropPlayed(p);
         }
         i += take;
     }
@@ -221,7 +237,7 @@ function process(p, output) {
         p.statsSamples = 0;
         p.port.postMessage({type: "stats", cut: p.cutSamples, gap: p.gapSamples});
     }
-    request(p, n);
+    request(p);
 }
 
 /**
@@ -237,9 +253,8 @@ function process(p, output) {
  * message some way into the audio it describes.
  *
  * @param {WorkletProc} p
- * @param {number} quantum
  */
-function request(p, quantum) {
+function request(p) {
     const remain = queuedLength(p);
     if (remain >= p.lowSamples) {
         return;
@@ -249,7 +264,7 @@ function request(p, quantum) {
     }
     p.waiting = true;
     p.waitSamples = 0;
-    p.port.postMessage({type: "need", remain, quantum, received: p.receivedSamples, time: currentTime});
+    p.port.postMessage({type: "need", remain, received: p.receivedSamples, time: currentTime});
 }
 
 /** @param {WorkletProc} p */
@@ -287,16 +302,7 @@ function trimOldAudio(p) {
             p.offset = 0;
         }
     }
-    if (p.head >= p.chunks.length) {
-        releaseChunks(p, p.chunks.length);
-        p.chunks = [];
-        p.head = 0;
-        p.offset = 0;
-        return;
-    }
-    if (p.head > 8) {
-        compact(p);
-    }
+    dropPlayed(p);
 }
 
 /** @param {WorkletProc} p */
@@ -342,30 +348,49 @@ function writeSample(p, ol, or, at, sampleL, sampleR) {
     p.lastR = outR;
 }
 
-/** @param {WorkletProc} p */
-function compact(p) {
+/**
+ * Hand played chunks back at once, but compact their entries only once the
+ * queue has drained or enough have piled up in front of the head to be worth
+ * shifting the rest down.
+ *
+ * @param {WorkletProc} p
+ */
+function dropPlayed(p) {
     releaseChunks(p, p.head);
+    if (p.head >= p.chunks.length) {
+        p.chunks = [];
+        p.head = 0;
+        p.released = 0;
+        p.offset = 0;
+        return;
+    }
+    if (p.head <= 8) {
+        return;
+    }
     const remain = p.chunks.length - p.head;
     for (let i = 0; i < remain; i += 1) {
         p.chunks[i] = p.chunks[p.head + i];
     }
     p.chunks.length = remain;
     p.head = 0;
+    p.released = 0;
 }
 
 /**
  * Hand the buffers of the chunks below `upto` back for refilling. The producer
  * transfers one away per frame, so without this the page allocates a buffer
- * every frame and the audio thread collects it.
+ * every frame and the audio thread collects it. Chunks below `released` have
+ * already gone back, and their buffers are detached.
  *
  * @param {WorkletProc} p
  * @param {number} upto
  */
 function releaseChunks(p, upto) {
-    for (let i = 0; i < upto; i += 1) {
+    for (let i = p.released; i < upto; i += 1) {
         const samples = p.chunks[i].samples;
         p.port.postMessage({type: "spent", samples}, [samples.buffer]);
     }
+    p.released = upto;
 }
 
 /**

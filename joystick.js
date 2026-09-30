@@ -36,12 +36,16 @@ export function initJoysticks(joystick) {
  * out snapshots, so this polls rather than listening, and the caller does it
  * once per animation frame. The first two connected pads become player 1 and
  * player 2 whichever slots they occupy, so one pad always drives player 1.
+ * `padIds` gets the browser's id of the pad on each port, or "" for none.
  *
  * @param {Uint8Array} joystick
+ * @param {string[]} padIds
  */
-export function pollJoysticks(joystick) {
+export function pollJoysticks(joystick, padIds) {
     joystick[0] = joyIdle;
     joystick[1] = joyIdle;
+    padIds[0] = "";
+    padIds[1] = "";
     if (typeof navigator.getGamepads !== "function") {
         return;
     }
@@ -53,8 +57,28 @@ export function pollJoysticks(joystick) {
             continue;
         }
         joystick[stick] = padContacts(pad);
+        padIds[stick] = pad.id;
         stick += 1;
     }
+}
+
+/**
+ * A gamepad id short enough to show on a port: without the mapping and
+ * vendor details Chrome appends in parentheses, and without the hex vendor and
+ * product prefix Firefox puts in front.
+ *
+ * @param {string} id
+ * @returns {string}
+ */
+export function padLabel(id) {
+    const label = id
+        .replace(/\s*\([^()]*(?:STANDARD GAMEPAD|Vendor:)[^()]*\)\s*$/i, "")
+        .replace(/^[0-9a-f]{1,4}-[0-9a-f]{1,4}-/i, "")
+        .trim();
+    if (label === "") {
+        return id;
+    }
+    return label;
 }
 
 /**

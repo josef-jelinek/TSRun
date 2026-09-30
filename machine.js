@@ -1,5 +1,5 @@
 import {createZ80, resetZ80, runZ80, irqZ80} from "./z80.js";
-import {createTape, parseTape, resetTape, startTape, rearmTape, stopTape, earLevel} from "./tape.js";
+import {createTape, parseTape, resetTape, startTape, rearmTape, stopTape, earLevel, nextBlock, describeBlocks, rewindBlock, forwardBlock} from "./tape.js";
 import {parseDck} from "./dock.js";
 import {createAy, resetAy, aySeek, ayRunTo, ayRunSilent, ayTakeSample, ayWriteReg, ayReadReg} from "./ay.js";
 
@@ -268,7 +268,7 @@ export function createMachine(keyMatrix, joystick) {
         stepAdded:  0,
         frameStart: 0,
         flashFrame: 0,
-        tape:       createTape(null, 0),
+        tape:       createTape(null, "", 0),
         tapePoll: {
             pc: -1,
             port: -1,
@@ -505,6 +505,38 @@ export function tapeInfo(m) {
 }
 
 /**
+ * The inserted tape's format and one listing row per block, for a printout.
+ * It allocates, so read it when a tape goes in, not per frame.
+ *
+ * @typedef {{
+ *   format: "" | "TAP" | "TZX",
+ *   blocks: import("./tape.js").BlockRow[],
+ * }} TapeListing
+ */
+
+/**
+ * @param {Machine} m
+ * @returns {TapeListing}
+ */
+export function tapeListing(m) {
+    return {
+        format: m.tape.format,
+        blocks: describeBlocks(m.tape.entries),
+    };
+}
+
+/**
+ * The listing row playing now or next; blockCount once the tape has played
+ * out. Cheap enough to read every animation frame.
+ *
+ * @param {Machine} m
+ * @returns {number}
+ */
+export function tapeCursor(m) {
+    return nextBlock(m.tape);
+}
+
+/**
  * Where the transport is. The frame loop reads this once per animation frame
  * and again on every emulated frame of a turbo burst, so it returns the bare
  * state instead of allocating a TapeInfo.
@@ -527,9 +559,9 @@ export function tapeState(m) {
 export function insertTape(m, bytes) {
     const parsed = parseTape(bytes);
     if (parsed.err !== null) {
-        m.tape = createTape(null, 0);
+        m.tape = createTape(null, "", 0);
     } else {
-        m.tape = createTape(parsed.entries, m.tstates);
+        m.tape = createTape(parsed.entries, parsed.format, m.tstates);
     }
     resetTapePoll(m);
     setUlaLevel(m);
@@ -540,7 +572,7 @@ export function insertTape(m, bytes) {
  * @param {Machine} m
  */
 export function ejectTape(m) {
-    m.tape = createTape(null, 0);
+    m.tape = createTape(null, "", 0);
     resetTapePoll(m);
     setUlaLevel(m);
 }
@@ -584,6 +616,30 @@ export function autoloadTape(m) {
 export function playTape(m) {
     rearmTape(m.tape);
     startTape(m.tape, m.tstates);
+    resetTapePoll(m);
+    setUlaLevel(m);
+}
+
+/**
+ * Rewind to the start of the block under way, or to the previous block. The
+ * machine keeps running; a loader waiting on EAR picks the tape up from there.
+ *
+ * @param {Machine} m
+ */
+export function rewindTape(m) {
+    rewindBlock(m.tape);
+    resetTapePoll(m);
+    setUlaLevel(m);
+}
+
+/**
+ * Fast-forward past the next block. The machine keeps running; a loader
+ * waiting on EAR picks the tape up from there.
+ *
+ * @param {Machine} m
+ */
+export function forwardTape(m) {
+    forwardBlock(m.tape);
     resetTapePoll(m);
     setUlaLevel(m);
 }
@@ -908,7 +964,8 @@ function ioWrite(m, port, value) {
         return;
     case 0xF5:
         renderSound(m, m.tstates);
-        m.ayLatch = value & 0x0F;
+        // All eight bits: the high four are the AY's chip select.
+        m.ayLatch = value & 0xFF;
         return;
     case 0xF6:
         renderSound(m, m.tstates);

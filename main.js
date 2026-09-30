@@ -1,11 +1,8 @@
 import {
-    insertTape,
-    ejectTape,
     insertDock,
     ejectDock,
     setHomeRom,
     setExRom,
-    cartInfo,
 } from "./machine.js";
 
 import {readFile} from "./io.js";
@@ -18,19 +15,36 @@ import {
     showInfo,
     resetSystem,
     refreshTapeStatus,
+    refreshCartStatus,
+    loadTape,
+    unloadTape,
     autoloadTapeIfEnabled,
 } from "./host.js";
 
 const ui = {
-    pageHeader:       /** @type {HTMLElement} */       (document.getElementById("page-header")),
     initInfo:         /** @type {HTMLElement} */       (document.getElementById("init-info")),
     soundInfo:        /** @type {HTMLElement} */       (document.getElementById("sound-info")),
     startupFileInfo:  /** @type {HTMLElement} */       (document.getElementById("startup-file-info")),
+    paused:           /** @type {HTMLInputElement} */  (document.getElementById("paused")),
     loadTape:         /** @type {HTMLButtonElement} */ (document.getElementById("load-tape")),
     fileTape:         /** @type {HTMLInputElement} */  (document.getElementById("file-tape")),
     auto:             /** @type {HTMLInputElement} */  (document.getElementById("auto")),
     playTape:         /** @type {HTMLButtonElement} */ (document.getElementById("play-tape")),
+    rewTape:          /** @type {HTMLButtonElement} */ (document.getElementById("rew-tape")),
+    ffTape:           /** @type {HTMLButtonElement} */ (document.getElementById("ff-tape")),
+    playTapeLabel:    /** @type {HTMLElement} */       (document.getElementById("play-tape-label")),
     tapeInfo:         /** @type {HTMLElement} */       (document.getElementById("tape-info")),
+    recorder:         /** @type {HTMLElement} */       (document.getElementById("recorder")),
+    tapeLabel:        /** @type {HTMLElement} */       (document.getElementById("tape-label")),
+    tapeCounter:      /** @type {HTMLElement} */       (document.getElementById("tape-counter")),
+    tapeTotal:        /** @type {HTMLElement} */       (document.getElementById("tape-total")),
+    printout:         /** @type {HTMLElement} */       (document.getElementById("printout")),
+    printoutName:     /** @type {HTMLElement} */       (document.getElementById("printout-name")),
+    printoutSummary:  /** @type {HTMLElement} */       (document.getElementById("printout-summary")),
+    printoutRows:     /** @type {HTMLElement} */       (document.getElementById("printout-rows")),
+    tapeBlocks:       /** @type {HTMLTableSectionElement} */ (document.getElementById("tape-blocks")),
+    joy1Info:         /** @type {HTMLElement} */       (document.getElementById("joy1-info")),
+    joy2Info:         /** @type {HTMLElement} */       (document.getElementById("joy2-info")),
     loadCart:         /** @type {HTMLButtonElement} */ (document.getElementById("load-cart")),
     fileCart:         /** @type {HTMLInputElement} */  (document.getElementById("file-cart")),
     ejectCart:        /** @type {HTMLButtonElement} */ (document.getElementById("eject-cart")),
@@ -50,6 +64,7 @@ const ui = {
     keyboardToggle:   /** @type {HTMLInputElement} */  (document.getElementById("keyboard-toggle")),
     crt:              /** @type {HTMLInputElement} */  (document.getElementById("crt")),
     stereo:           /** @type {HTMLInputElement} */  (document.getElementById("stereo")),
+    muted:            /** @type {HTMLInputElement} */  (document.getElementById("muted")),
     fullscreenToggle: /** @type {HTMLButtonElement} */ (document.getElementById("fullscreen-toggle")),
     turbo:            /** @type {HTMLInputElement} */  (document.getElementById("turbo")),
 };
@@ -100,22 +115,16 @@ ui.fileTape.onchange = function () {
         return;
     }
     cancelStartupFile();
-    ejectTape(host.machine);
-    host.tapeName = "";
-    refreshTapeStatus(host, null);
+    unloadTape(host);
     // Triggering multiple concurrent file reads is too unlikely to guard against.
     readFile(file, "arraybuffer", function (err, buf) {
         if (err !== null) {
             refreshTapeStatus(host, err);
             return;
         }
-        const tapeErr = insertTape(host.machine, buf);
-        if (tapeErr !== null) {
-            refreshTapeStatus(host, tapeErr);
+        if (loadTape(host, file.name, buf) !== null) {
             return;
         }
-        host.tapeName = file.name;
-        refreshTapeStatus(host, null);
         showInfo(ui.startupFileInfo, "");
         autoloadTapeIfEnabled(host);
     });
@@ -133,19 +142,20 @@ ui.fileCart.onchange = function () {
     }
     cancelStartupFile();
     ejectDock(host.machine);
+    refreshCartStatus(host, "", null);
     // Triggering multiple concurrent file reads is too unlikely to guard against.
     readFile(file, "arraybuffer", function (err, buf) {
         if (err !== null) {
-            showError(ui.cartInfo, err);
+            refreshCartStatus(host, "", err);
             return;
         }
         const dockErr = insertDock(host.machine, buf);
         if (dockErr !== null) {
-            showError(ui.cartInfo, dockErr);
+            refreshCartStatus(host, "", dockErr);
             return;
         }
         resetSystem(host);
-        showInfo(ui.cartInfo, file.name + ": " + cartInfo(host.machine).summary);
+        refreshCartStatus(host, file.name, null);
         showInfo(ui.startupFileInfo, "");
     });
 };
@@ -153,7 +163,7 @@ ui.fileCart.onchange = function () {
 ui.ejectCart.onclick = function () {
     ejectDock(host.machine);
     resetSystem(host);
-    showInfo(ui.cartInfo, "No cartridge.");
+    refreshCartStatus(host, "", null);
 };
 
 ui.loadRom0.onclick = function () {
@@ -211,25 +221,20 @@ function cancelStartupFile() {
  */
 function applyStartupFile(name, bytes) {
     if (isTapeName(name)) {
-        const tapeErr = insertTape(host.machine, bytes);
-        if (tapeErr !== null) {
-            host.tapeName = "";
-            refreshTapeStatus(host, tapeErr);
+        if (loadTape(host, name, bytes) !== null) {
             return;
         }
-        host.tapeName = name;
-        refreshTapeStatus(host, null);
         autoloadTapeIfEnabled(host);
         return;
     }
     if (isCartName(name)) {
         const dockErr = insertDock(host.machine, bytes);
         if (dockErr !== null) {
-            showError(ui.cartInfo, dockErr);
+            refreshCartStatus(host, "", dockErr);
             return;
         }
         resetSystem(host);
-        showInfo(ui.cartInfo, name + ": " + cartInfo(host.machine).summary);
+        refreshCartStatus(host, name, null);
         return;
     }
     showError(ui.startupFileInfo, "Unsupported startup file type: " + name + ".");
