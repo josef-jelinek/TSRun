@@ -149,13 +149,38 @@ body:has(#keyboard-toggle:not(:checked)) .rom-keys {
     body {
         grid-template-areas: "tv" "case" "deck";
     }
+    .case {
+        grid-template-areas: "fn" "keys" "rom" "dock" "brand";
+    }
     body:has(#keyboard-toggle:not(:checked)) .case {
         grid-template-columns: minmax(0, 1fr);
         grid-template-areas: "fn" "rom" "dock" "brand";
     }
+    /* With the board shown too, the ROM opening and the dock keep the
+       folded strip's layout. */
+    .rom {
+        grid-area: rom;
+        display: grid;
+        grid-template-columns: auto auto;
+        align-items: center;
+        gap: 6px 14px;
+        max-width: none;
+    }
+    .rom-keys {
+        grid-column: 2;
+        grid-row: 1 / 3;
+    }
+    .dock-keys,
+    .rom-keys {
+        flex-direction: column;
+        width: 84px;
+    }
+    .rom-bay,
     body:has(#keyboard-toggle:not(:checked)) .rom-bay {
         grid-template-columns: auto;
     }
+    .rom,
+    .dock,
     body:has(#keyboard-toggle:not(:checked)) .rom,
     body:has(#keyboard-toggle:not(:checked)) .dock {
         justify-self: start;

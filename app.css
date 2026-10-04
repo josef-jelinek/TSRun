@@ -1270,9 +1270,24 @@ body:has(#keyboard-toggle:not(:checked)) .ports {
         order: 3;
         flex-basis: 100%;
     }
+    /* The badge breaks up so the board sits right under the machine keys, and
+       the rest of the case keeps the folded strip's layout with the board
+       shown too. */
     .case {
         grid-template-columns: minmax(0, 1fr);
-        grid-template-areas: "badge" "keys" "dock";
+        grid-template-areas: "fn" "keys" "dock" "brand";
+        align-items: center;
+        gap: 14px 22px;
+    }
+    .badge {
+        display: contents;
+    }
+    .fn-keys {
+        grid-area: fn;
+        align-self: start;
+    }
+    .brand {
+        grid-area: brand;
     }
     /* The stacked page scrolls, so the board always fills the case: no grip,
        and a size dragged in a wider window does not apply. */
@@ -1280,9 +1295,68 @@ body:has(#keyboard-toggle:not(:checked)) .ports {
         display: none;
     }
     .keyboard-face {
+        display: grid;
+        grid-template-columns: repeat(10, minmax(0, 1fr));
         min-width: 100%;
     }
-    body:has(#keyboard-toggle:not(:checked)) .dock {
+    /* The phone board is a plain 10 by 4 grid: rows 4 and 5 dissolve into the
+       grid, so the space bar ends the shift row, and the spare keys go. */
+    .kb-band,
+    .kb-row {
+        --u: calc(100cqw / 10);
+        grid-column: 1 / -1;
+    }
+    .kb-band {
+        margin-right: calc(var(--u) * 0.1);
+        padding-left: 0;
+    }
+    .kb-row.r1,
+    .kb-row.r2,
+    .kb-row.r3 {
+        padding-left: 0;
+    }
+    .kb-row.r4,
+    .kb-row.r5 {
+        display: contents;
+    }
+    .kb-row.r4 .k,
+    .kb-row.r5 .k {
+        height: calc(var(--u) * 0.9);
+    }
+    .k.w-enter,
+    .k.w-caps,
+    .k.w-space {
+        width: var(--u);
+    }
+    .k.spare {
+        display: none;
+    }
+    /* The space cap lines up with the caps between their legends and, now
+       that the BREAK key is gone, is worded like the other word keys. */
+    .k .cap.bar {
+        align-items: center;
+        justify-content: center;
+        margin: calc(var(--u) * 0.18) 0;
+        font-size: max(6px, calc(var(--u) * 0.13));
+        font-weight: 700;
+        line-height: 1.15;
+        text-align: center;
+    }
+    .k .cap.bar::before {
+        content: "SPACE\A BREAK";
+        white-space: pre;
+    }
+    .dock {
+        flex-direction: row;
         flex-wrap: wrap;
+        align-items: center;
+        gap: 14px;
+    }
+    .dock .door {
+        width: 210px;
+    }
+    .ports {
+        grid-template-columns: auto;
+        margin-top: 0;
     }
 }

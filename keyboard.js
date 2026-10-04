@@ -12,7 +12,8 @@
  * symbol-shift bar, and `up` and `down` on the case above and below the key.
  * `hue` is the colour name over a number key and `glyph` its block graphic.
  * `size` widens the key (w-enter, w-caps, w-space) and `face` restyles its cap
- * (word, word sym, bar).
+ * (word, word sym, bar). `spare` marks a key that repeats another (BREAK, the
+ * right CAPS SHIFT), which the compact phone board leaves out.
  *
  * @typedef {{
  *   label: string,
@@ -24,6 +25,7 @@
  *   glyph?: number,
  *   size?: string,
  *   face?: string,
+ *   spare?: boolean,
  *   bits: KeyBit[],
  *   codes: string[],
  * }} KeySpec
@@ -160,8 +162,8 @@ const boardRows = [
         {label: "N", up: "INKEY$", keyword: "NEXT", sym: ",", down: "OVER", bits: [keyN], codes: ["KeyN"]},
         {label: "M", up: "PI", keyword: "PAUSE", sym: ".", down: "INVERSE", bits: [keyM], codes: ["KeyM"]},
         {label: "SYMBL\nSHIFT", face: "word sym", bits: [ss], codes: ["ControlLeft", "ControlRight"]},
-        {label: "BREAK", face: "word", bits: [cs, keySpace], codes: ["Escape"]},
-        {label: "CAPS\nSHIFT", size: "w-caps", face: "word", bits: [cs], codes: ["ShiftRight"]},
+        {label: "BREAK", face: "word", spare: true, bits: [cs, keySpace], codes: ["Escape"]},
+        {label: "CAPS\nSHIFT", size: "w-caps", face: "word", spare: true, bits: [cs], codes: ["ShiftRight"]},
     ],
     [
         {label: "", size: "w-space", face: "bar", bits: [keySpace], codes: ["Space"]},
@@ -363,6 +365,9 @@ function makeKey(kbd, spec) {
     hit.className = "k";
     if (spec.size !== undefined) {
         hit.classList.add(spec.size);
+    }
+    if (spec.spare === true) {
+        hit.classList.add("spare");
     }
     const cap = document.createElement("span");
     cap.className = "cap";
