@@ -1274,6 +1274,14 @@ body:has(#keyboard-toggle:not(:checked)) .ports {
         grid-template-columns: minmax(0, 1fr);
         grid-template-areas: "badge" "keys" "dock";
     }
+    /* The stacked page scrolls, so the board always fills the case: no grip,
+       and a size dragged in a wider window does not apply. */
+    #keyboard-split {
+        display: none;
+    }
+    .keyboard-face {
+        min-width: 100%;
+    }
     body:has(#keyboard-toggle:not(:checked)) .dock {
         flex-wrap: wrap;
     }
