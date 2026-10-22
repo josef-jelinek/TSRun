@@ -34,7 +34,7 @@ Then visit `http://127.0.0.1:8000/` (or the port you chose).
 
 The machine starts with HOME and EXROM filled with zeros, then tries
 `roms/<name>-0.rom` (16K) and `roms/<name>-1.rom` (8K). The default `<name>` is
-`ts2068`. Use `?rom=leap` for the experimental Leap ROMs. `?rom=ts2068` is the
+`ts2068`. Use `?rom=leap` for the 2068-Leap V2 ROMs. `?rom=ts2068` is the
 same as omitting the parameter. With the bundled ROMs the copyright screen
 should appear within about a second. If a ROM fetch fails, **Load ROM0** /
 **Load ROM1** still accept a raw 16K HOME and 8K EXROM `.rom` or `.bin` file.
@@ -358,6 +358,8 @@ beam renders as bars that break mid-line, as on hardware. Bit 6 of port `FF` inh
 - `screen.vert.glsl` / `screen.frag.glsl` - display shaders.
 - `server.go` - optional local static file server (`go run server.go`).
 - `tsconfig.json` - check-only TypeScript config (`noEmit`).
-- `roms/` - Machine default ROM files and experimental ROM files.
+- `roms/` - Machine default ROM files and the alternative Leap ROM files.
 
-The experimental Leap ROM files are from [https://github.com/nchiker/2068-Leap-Preview](https://github.com/nchiker/2068-Leap-Preview).
+The Leap ROM files are the 2068-Leap V2 release
+[v2.0.1-emu.1](https://github.com/nchiker/2068-Leap/releases/tag/v2.0.1-emu.1)
+from [https://github.com/nchiker/2068-Leap](https://github.com/nchiker/2068-Leap).
